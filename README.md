@@ -148,6 +148,8 @@ cp <headless-ida>/CLAUDE.md .
 
 Claude will automatically start an instance, analyze the binary, and report findings.
 
+> **Note**: `ida.md` and `CLAUDE.md` are templates. Modify paths, analysis strategies, and options to fit your project and environment.
+
 #### Other AI Tools (Cursor, GPT, etc.)
 
 Any AI with shell/terminal access can call `ida_cli.py` directly. Add `CLAUDE.md` content to your AI's system prompt or project context so it knows the available commands.
@@ -358,6 +360,8 @@ Claude Code에서 사용:
 ```
 
 Claude가 자동으로 인스턴스를 시작하고, 바이너리를 분석하고, 결과를 보고합니다.
+
+> **참고**: `ida.md`와 `CLAUDE.md`는 템플릿입니다. 경로, 분석 전략, 옵션 등을 본인의 프로젝트와 환경에 맞게 수정하세요.
 
 #### 다른 AI 도구 (Cursor, GPT 등)
 
