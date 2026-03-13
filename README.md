@@ -21,6 +21,21 @@ User/Claude → ida_cli.py → HTTP JSON-RPC → ida_server.py (import idapro)
 - **.i64 reuse** — Reloads in seconds for repeated analysis
 - **Auth tokens** — Per-instance Bearer token auto-generation
 
+### Why No MCP?
+
+This project intentionally uses plain HTTP JSON-RPC instead of MCP (Model Context Protocol).
+
+| | HTTP JSON-RPC (this project) | MCP |
+| --- | --- | --- |
+| **Dependencies** | Python stdlib only (`http.server`) | MCP SDK + transport layer required |
+| **Debugging** | `curl` one-liner testable | Requires MCP-aware client |
+| **AI tool compatibility** | Works with any AI that has shell access (Claude Code, Cursor, etc.) | Tied to MCP-compatible clients only |
+| **Deployment** | Single `.py` file, zero config | Server manifest + schema registration needed |
+| **Transparency** | Raw JSON request/response visible in logs | Abstracted behind protocol layers |
+| **idalib constraint** | Single-thread `HTTPServer` maps 1:1 to idalib's requirement | MCP's async model conflicts with idalib's single-thread restriction |
+
+> **TL;DR** — For a tool that wraps a single-threaded native library (idalib), a simple HTTP server is more reliable and portable than MCP. Any AI assistant with bash/shell access can use it immediately.
+
 ### Requirements
 
 | Component | Version |
@@ -227,6 +242,21 @@ User/Claude → ida_cli.py → HTTP JSON-RPC → ida_server.py (import idapro)
 - **단일 스레드 HTTPServer** — idalib 단일 스레드 제약 준수
 - **.i64 재사용** — 반복 분석 시 수 초 만에 로드
 - **인증 토큰** — 인스턴스별 Bearer token 자동 생성
+
+### 왜 MCP를 안 쓰나?
+
+이 프로젝트는 MCP(Model Context Protocol) 대신 순수 HTTP JSON-RPC를 의도적으로 사용합니다.
+
+| | HTTP JSON-RPC (이 프로젝트) | MCP |
+| --- | --- | --- |
+| **의존성** | Python 표준 라이브러리만 (`http.server`) | MCP SDK + transport 레이어 필요 |
+| **디버깅** | `curl` 한 줄로 테스트 가능 | MCP 지원 클라이언트 필요 |
+| **AI 도구 호환성** | shell 접근 가능한 모든 AI에서 동작 (Claude Code, Cursor 등) | MCP 호환 클라이언트에만 종속 |
+| **배포** | `.py` 파일 하나, 별도 설정 없음 | 서버 manifest + 스키마 등록 필요 |
+| **투명성** | Raw JSON 요청/응답이 로그에 그대로 노출 | 프로토콜 레이어 뒤에 추상화됨 |
+| **idalib 제약** | 단일 스레드 `HTTPServer`가 idalib 제약과 1:1 매핑 | MCP의 async 모델이 idalib 단일 스레드 제약과 충돌 |
+
+> **요약** — 단일 스레드 네이티브 라이브러리(idalib)를 감싸는 도구에는 MCP보다 단순한 HTTP 서버가 더 안정적이고 이식성이 높습니다. bash/shell 접근이 가능한 모든 AI 어시스턴트에서 즉시 사용할 수 있습니다.
 
 ### 요구사항
 
