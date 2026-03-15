@@ -53,7 +53,8 @@ ida-cli wait <id> --timeout 300           # Wait for analysis completion
 ida-cli list                              # List all instances
 ida-cli list --json                       # List instances as JSON (includes idb_path)
 ida-cli logs <id> --tail 20               # View instance logs
-ida-cli cleanup                           # Remove stale instances
+ida-cli logs <id> --follow                # Follow logs in real-time
+ida-cli cleanup [--dry-run]               # Remove stale instances
 ida-cli save                              # Save IDB database
 ```
 
@@ -129,7 +130,7 @@ ida-cli -b <hint> basic-blocks <addr> --graph-only   # Graph output only
 ### Search
 ```bash
 ida-cli -b <hint> search-code "keyword" --max 10      # Search in decompiled pseudocode
-  # Options: --max-funcs N (limit functions to scan)
+  # Options: --max-funcs N (limit functions to scan), --case-sensitive
   # WARNING: Decompiles every function to search. Slow on large binaries (1000+ funcs).
   #          Use --max-funcs to limit scope, or prefer strings-xrefs for string searches.
 ida-cli -b <hint> search-const 0x1234 --max 20 [--out F]  # Search constant/immediate values
@@ -175,7 +176,7 @@ ida-cli -b <hint> sigs apply <sig_name>
 ida-cli -b <hint> rename <addr> <new_name>
 ida-cli -b <hint> rename-batch mapping.csv             # Batch rename from CSV (addr,name) or JSON
 ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
-ida-cli -b <hint> comment <addr> "description text"
+ida-cli -b <hint> comment <addr> "description text" [--repeatable] [--type line|func]
 ida-cli -b <hint> patch <addr> 90 90 90               # NOP patch (requires exec_enabled)
 ida-cli -b <hint> save                                 # Save IDB
 ```
@@ -229,7 +230,7 @@ ida-cli -b <hint> profile run firmware   # Peripherals (UART/SPI/GPIO), protocol
 ```bash
 ida-cli -b <hint> compare old.exe new.exe --out diff.json
 ida-cli -b <hint> code-diff <instanceA> <instanceB> [--functions func1 func2]
-ida-cli -b <hint> diff                                 # Compare two running instances
+ida-cli -b <hint> diff <instance_a> <instance_b>         # Compare two running instances
 ```
 
 ### IDA Python Execution
@@ -244,7 +245,7 @@ ida-cli -b <hint> shell                                # Interactive IDA Python 
 ```bash
 ida-cli -b <hint> methods                              # List available RPC methods
 ida-cli update                                         # Update tool from git
-ida-cli completions --shell bash|zsh|fish|powershell   # Generate shell completions
+ida-cli completions --shell bash|zsh|powershell   # Generate shell completions
 ```
 
 ## Key Global Options

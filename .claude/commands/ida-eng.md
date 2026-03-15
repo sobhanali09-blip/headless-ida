@@ -51,7 +51,8 @@ ida-cli wait <id> --timeout 300           # Wait for analysis completion
 ida-cli list                              # List all instances
 ida-cli list --json                       # List instances as JSON (includes idb_path)
 ida-cli logs <id> --tail 20               # View instance logs
-ida-cli cleanup                           # Remove stale instances
+ida-cli logs <id> --follow                # Follow logs in real-time
+ida-cli cleanup [--dry-run]               # Remove stale instances
 ida-cli save                              # Save IDB database
 ```
 
@@ -91,7 +92,7 @@ ida-cli -b <hint> disasm <addr|name> --count 50
 
 ### Function Analysis
 ```bash
-ida-cli -b <hint> find_func <name> [--regex]       # Find function by name/regex
+ida-cli -b <hint> find_func <name> [--regex] [--out F]  # Find function by name/regex
 ida-cli -b <hint> func_info <addr|name>             # Function details (size, args, type)
 ida-cli -b <hint> stack-frame <addr|name>            # Stack frame layout (locals, args, offsets)
 ida-cli -b <hint> switch-table <addr|name>           # Analyze switch/jump tables
@@ -101,12 +102,16 @@ ida-cli -b <hint> auto-rename [--apply] [--max-funcs 200]  # Heuristic rename su
 
 ### Cross-References
 ```bash
+# xrefs: single-level cross-references (direct callers/callees only)
 ida-cli -b <hint> xrefs <addr> --direction to|from|both
 ida-cli -b <hint> callers <addr>                           # Shortcut: xrefs --direction to
 ida-cli -b <hint> callees <addr>                           # Shortcut: xrefs --direction from
+
+# cross-refs: multi-level chain tracing (follows caller chains up to --depth levels)
 ida-cli -b <hint> cross-refs <addr|name> --depth 3 --direction to|from|both
   # Options: --format mermaid|dot, --out F
 ```
+> **xrefs vs cross-refs**: `xrefs` = direct (1-level) references. `cross-refs` = recursive chain tracing up to `--depth` levels with mermaid/DOT graph output.
 
 ### Call Graph & Control Flow
 ```bash
@@ -123,9 +128,9 @@ ida-cli -b <hint> basic-blocks <addr> --graph-only   # Graph output only
 ### Search
 ```bash
 ida-cli -b <hint> search-code "keyword" --max 10      # Search in decompiled pseudocode
-  # Options: --max-funcs N (limit functions to scan)
-ida-cli -b <hint> search-const 0x1234 --max 20         # Search constant/immediate values
-ida-cli -b <hint> find_pattern "48 8B ? ? 00" --max 20 # Byte pattern search
+  # Options: --max-funcs N (limit functions to scan), --case-sensitive
+ida-cli -b <hint> search-const 0x1234 --max 20 [--out F]  # Search constant/immediate values
+ida-cli -b <hint> find_pattern "48 8B ? ? 00" --max 20 [--out F]  # Byte pattern search
 ida-cli -b <hint> strings-xrefs --filter http --max 20  # Strings + referencing functions
   # Options: --min-refs N, --out F
 ida-cli -b <hint> data-refs --max 50                    # Data segment reference analysis
@@ -167,7 +172,7 @@ ida-cli -b <hint> sigs apply <sig_name>
 ida-cli -b <hint> rename <addr> <new_name>
 ida-cli -b <hint> rename-batch mapping.csv             # Batch rename from CSV (addr,name) or JSON
 ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
-ida-cli -b <hint> comment <addr> "description text"
+ida-cli -b <hint> comment <addr> "description text" [--repeatable] [--type line|func]
 ida-cli -b <hint> patch <addr> 90 90 90               # NOP patch (requires exec_enabled)
 ida-cli -b <hint> save                                 # Save IDB
 ```
@@ -221,7 +226,7 @@ ida-cli -b <hint> profile run firmware
 ```bash
 ida-cli -b <hint> compare old.exe new.exe --out diff.json
 ida-cli -b <hint> code-diff <instanceA> <instanceB> [--functions func1 func2]
-ida-cli -b <hint> diff                                 # Compare two running instances
+ida-cli -b <hint> diff <instance_a> <instance_b>         # Compare two running instances
 ```
 
 ### IDA Python Execution
@@ -236,7 +241,7 @@ ida-cli -b <hint> shell                                # Interactive IDA Python 
 ```bash
 ida-cli -b <hint> methods                              # List available RPC methods
 ida-cli update                                         # Update tool from git
-ida-cli completions --shell bash|zsh|fish|powershell   # Generate shell completions
+ida-cli completions --shell bash|zsh|powershell   # Generate shell completions
 ```
 
 ## Key Global Options
@@ -244,12 +249,15 @@ ida-cli completions --shell bash|zsh|fish|powershell   # Generate shell completi
 - `-b <hint>` -- Select instance by binary name substring (e.g., `-b note` for notepad.exe)
 - `-i <id>` -- Select instance by ID
 - `--out <path>` -- Save output to file (decompile/decompile_batch suppress inline output)
-- `--count N` / `--offset N` -- Pagination for large result sets
+- `--count N` / `--offset N` -- Pagination for list commands (functions, strings, imports, exports)
+- `--max N` -- Limit results for search commands (find_func, find_pattern, search-const, search-code, vtables)
 - `--filter <keyword>` -- Filter results by name substring
 - `--format mermaid|dot` -- Graph output format (callgraph, cross-refs, basic-blocks)
 - `--json` -- JSON output mode
 - `--fresh` -- Ignore existing .i64, reanalyze from scratch
 - `--force` -- Allow duplicate instances of same binary
+- `--count-only` -- Show only total count (for functions/strings/imports/exports)
+- `--version` -- Show CLI version
 
 ## Multi-Instance Workflow
 
