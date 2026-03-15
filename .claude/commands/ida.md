@@ -36,10 +36,10 @@ python tools/ida_cli.py wait <id> --timeout 300
 ```bash
 python tools/ida_cli.py -b <hint> imagebase
 python tools/ida_cli.py -b <hint> segments
-python tools/ida_cli.py -b <hint> strings --count 50 --out C:/tmp/strings.txt
-python tools/ida_cli.py -b <hint> imports --count 50 --out C:/tmp/imports.txt
-python tools/ida_cli.py -b <hint> exports --out C:/tmp/exports.txt
-python tools/ida_cli.py -b <hint> functions --filter <keyword> --out C:/tmp/funcs.txt
+python tools/ida_cli.py -b <hint> strings --count 50 --out /tmp/strings.txt
+python tools/ida_cli.py -b <hint> imports --count 50 --out /tmp/imports.txt
+python tools/ida_cli.py -b <hint> exports --out /tmp/exports.txt
+python tools/ida_cli.py -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
 ```
 - `--out`을 사용하여 컨텍스트 절약
 - `-b <hint>`로 바이너리 이름 일부만으로 인스턴스 자동 선택
@@ -50,7 +50,10 @@ python tools/ida_cli.py -b <hint> functions --filter <keyword> --out C:/tmp/func
 python tools/ida_cli.py -b <hint> find_func <이름> [--regex]
 
 # 디컴파일
-python tools/ida_cli.py -b <hint> decompile <주소|이름> [--out C:/tmp/func.c]
+python tools/ida_cli.py -b <hint> decompile <주소|이름> [--out /tmp/func.c]
+
+# 일괄 디컴파일
+python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
 
 # 디스어셈블리
 python tools/ida_cli.py -b <hint> disasm <주소|이름> --count 50
@@ -67,13 +70,17 @@ python tools/ida_cli.py -b <hint> bytes <주소> <크기>
 # 바이트 패턴 검색
 python tools/ida_cli.py -b <hint> find_pattern "48 8B ? ? 00" --max 20
 
-# 일괄 디컴파일
-python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... --out C:/tmp/batch.json
+# 주석 조회
+python tools/ida_cli.py -b <hint> comments <주소>
+
+# 사용 가능한 RPC 메서드 목록
+python tools/ida_cli.py -b <hint> methods
 ```
 
 ### 5. 수정 (필요 시)
 ```bash
 python tools/ida_cli.py -b <hint> rename <주소> <새이름>
+python tools/ida_cli.py -b <hint> set_type <주소> "int __fastcall func(int a, int b)"
 python tools/ida_cli.py -b <hint> comment <주소> "설명 텍스트"
 python tools/ida_cli.py -b <hint> save
 ```
@@ -90,7 +97,7 @@ python tools/ida_cli.py stop <id>
 2. find_func로 관련 함수 목록 확인
 3. decompile로 핵심 함수 분석
 4. xrefs로 호출 관계 추적
-5. rename/comment로 분석 결과 기록
+5. rename/set_type/comment로 분석 결과 기록
 
 ### 대용량 결과 처리
 - 항상 `--out` 옵션으로 파일 저장 후 Read로 읽기

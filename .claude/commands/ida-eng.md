@@ -36,10 +36,10 @@ Survey the binary in this order:
 ```bash
 python tools/ida_cli.py -b <hint> imagebase
 python tools/ida_cli.py -b <hint> segments
-python tools/ida_cli.py -b <hint> strings --count 50 --out C:/tmp/strings.txt
-python tools/ida_cli.py -b <hint> imports --count 50 --out C:/tmp/imports.txt
-python tools/ida_cli.py -b <hint> exports --out C:/tmp/exports.txt
-python tools/ida_cli.py -b <hint> functions --filter <keyword> --out C:/tmp/funcs.txt
+python tools/ida_cli.py -b <hint> strings --count 50 --out /tmp/strings.txt
+python tools/ida_cli.py -b <hint> imports --count 50 --out /tmp/imports.txt
+python tools/ida_cli.py -b <hint> exports --out /tmp/exports.txt
+python tools/ida_cli.py -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
 ```
 - Use `--out` to save context window space
 - Use `-b <hint>` to auto-select an instance by binary name substring
@@ -50,7 +50,10 @@ python tools/ida_cli.py -b <hint> functions --filter <keyword> --out C:/tmp/func
 python tools/ida_cli.py -b <hint> find_func <name> [--regex]
 
 # Decompile
-python tools/ida_cli.py -b <hint> decompile <addr|name> [--out C:/tmp/func.c]
+python tools/ida_cli.py -b <hint> decompile <addr|name> [--out /tmp/func.c]
+
+# Batch decompile
+python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
 
 # Disassembly
 python tools/ida_cli.py -b <hint> disasm <addr|name> --count 50
@@ -67,13 +70,17 @@ python tools/ida_cli.py -b <hint> bytes <addr> <size>
 # Byte pattern search
 python tools/ida_cli.py -b <hint> find_pattern "48 8B ? ? 00" --max 20
 
-# Batch decompile
-python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... --out C:/tmp/batch.json
+# Get comments
+python tools/ida_cli.py -b <hint> comments <addr>
+
+# List available RPC methods
+python tools/ida_cli.py -b <hint> methods
 ```
 
 ### 5. Modification (if needed)
 ```bash
 python tools/ida_cli.py -b <hint> rename <addr> <new_name>
+python tools/ida_cli.py -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
 python tools/ida_cli.py -b <hint> comment <addr> "description text"
 python tools/ida_cli.py -b <hint> save
 ```
@@ -90,7 +97,7 @@ python tools/ida_cli.py stop <id>
 2. List related functions with find_func
 3. Decompile key functions
 4. Trace call relationships with xrefs
-5. Record analysis results with rename/comment
+5. Record analysis results with rename/set_type/comment
 
 ### Handling Large Results
 - Always save to file with `--out`, then read with Read tool
