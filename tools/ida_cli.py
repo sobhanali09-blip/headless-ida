@@ -384,16 +384,21 @@ def _spawn_server(config, config_path, binary_path, instance_id, idb_path, log_p
            "--log", log_path, "--config", config_path]
     if fresh:
         cmd.append("--fresh")
-    flags = 0
-    if sys.platform == "win32":
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     env = os.environ.copy()
     env["IDADIR"] = config["ida"]["install_dir"]
     stderr_file = open(log_path + ".stderr", "w") if log_path else subprocess.DEVNULL
-    return subprocess.Popen(
-        cmd, creationflags=flags, env=env,
+    popen_kwargs = dict(
+        env=env,
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr_file,
     )
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    else:
+        # Unix: detach via double-fork behavior with start_new_session
+        popen_kwargs["start_new_session"] = True
+    return subprocess.Popen(cmd, **popen_kwargs)
 
 
 def _wait_for_start(instance_id):

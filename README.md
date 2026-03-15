@@ -43,7 +43,7 @@ This project intentionally uses plain HTTP JSON-RPC instead of MCP (Model Contex
 | --------- | ------- |
 | IDA Pro | 9.1+ (idalib support required) |
 | Python | 3.12+ |
-| OS | Windows 10/11 |
+| OS | Windows, Linux, macOS |
 
 ### Setup
 
@@ -62,7 +62,10 @@ The `.whl` file is included in your IDA Pro installation directory.
 python "<IDA_DIR>/idalib/python/py-activate-idalib.py"
 
 # Option B: Set environment variable
+# Windows
 set IDADIR=C:\Program Files\IDA Professional 9.3
+# Linux/macOS
+export IDADIR=/opt/ida-9.3
 ```
 
 #### Step 3. Install dependencies
@@ -99,6 +102,8 @@ Edit `tools/config.json` to set IDA path and other options:
   }
 }
 ```
+
+> **Note**: `%USERPROFILE%` is automatically mapped to `$HOME` on Linux/macOS. On Linux/macOS, set `install_dir` to your IDA path (e.g., `/opt/ida-9.3`).
 
 #### Step 6. Test it works
 
@@ -259,7 +264,7 @@ User/AI → ida_cli.py → HTTP JSON-RPC → ida_server.py (idalib)
 | ---- | ---- |
 | IDA Pro | 9.1 이상 (idalib 지원 필수) |
 | Python | 3.12+ |
-| OS | Windows 10/11 |
+| OS | Windows, Linux, macOS |
 
 ### 환경 구축
 
@@ -278,7 +283,10 @@ IDA Pro 설치 디렉토리에 `.whl` 파일이 포함되어 있습니다.
 python "<IDA_DIR>/idalib/python/py-activate-idalib.py"
 
 # 방법 B: 환경 변수 설정
+# Windows
 set IDADIR=C:\Program Files\IDA Professional 9.3
+# Linux/macOS
+export IDADIR=/opt/ida-9.3
 ```
 
 #### Step 3. 의존 패키지 설치
@@ -315,6 +323,8 @@ python tools/ida_cli.py --init
   }
 }
 ```
+
+> **참고**: `%USERPROFILE%`은 Linux/macOS에서 자동으로 `$HOME`으로 매핑됩니다. Linux/macOS에서는 `install_dir`을 IDA 경로로 설정하세요 (예: `/opt/ida-9.3`).
 
 #### Step 6. 동작 테스트
 

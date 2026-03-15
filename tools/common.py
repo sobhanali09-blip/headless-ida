@@ -23,16 +23,26 @@ FILE_READ_CHUNK = 8192          # bytes per chunk for file MD5
 # ─────────────────────────────────────────────
 
 _ENV_VARS = {
+    # Windows
     "%USERPROFILE%": "USERPROFILE",
     "%TEMP%": "TEMP",
     "%APPDATA%": "APPDATA",
+    # Unix
+    "$HOME": "HOME",
 }
 
 
 def _expand_env(path):
+    # Handle ~ (Unix home directory shorthand)
+    if path.startswith("~"):
+        path = os.path.expanduser(path)
     for placeholder, var in _ENV_VARS.items():
         if placeholder in path:
-            path = path.replace(placeholder, os.environ.get(var, ""))
+            value = os.environ.get(var, "")
+            # Cross-platform fallback: %USERPROFILE% -> $HOME on Unix
+            if not value and placeholder == "%USERPROFILE%":
+                value = os.environ.get("HOME", "")
+            path = path.replace(placeholder, value)
     return os.path.normpath(path)
 
 
