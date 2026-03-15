@@ -37,12 +37,19 @@ def _expand_env(path):
     if path.startswith("~"):
         path = os.path.expanduser(path)
     for placeholder, var in _ENV_VARS.items():
-        if placeholder in path:
-            value = os.environ.get(var, "")
-            # Cross-platform fallback: %USERPROFILE% -> $HOME on Unix
-            if not value and placeholder == "%USERPROFILE%":
-                value = os.environ.get("HOME", "")
-            path = path.replace(placeholder, value)
+        if placeholder not in path:
+            continue
+        # For $VAR style: ensure it's not a prefix of a longer variable name
+        if placeholder.startswith("$"):
+            idx = path.find(placeholder)
+            end = idx + len(placeholder)
+            if end < len(path) and (path[end].isalnum() or path[end] == "_"):
+                continue
+        value = os.environ.get(var, "")
+        # Cross-platform fallback: %USERPROFILE% -> $HOME on Unix
+        if not value and placeholder == "%USERPROFILE%":
+            value = os.environ.get("HOME", "")
+        path = path.replace(placeholder, value)
     return os.path.normpath(path)
 
 

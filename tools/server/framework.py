@@ -191,8 +191,8 @@ def _require_param(params, key, msg=None):
 
 
 def _clamp_int(params, key, default, max_val):
-    """Get an int parameter clamped to max_val."""
-    return min(int(params.get(key, default)), max_val)
+    """Get an int parameter clamped to [1, max_val]."""
+    return max(1, min(int(params.get(key, default)), max_val))
 
 
 def _bytes_to_hex(raw):
@@ -256,6 +256,8 @@ def _resolve_addr(addr_str):
     import idc
     if addr_str is None:
         raise RpcError("INVALID_PARAMS", "addr parameter required")
+    if isinstance(addr_str, int):
+        return addr_str
     addr_str = str(addr_str).strip()
     try:
         return int(addr_str, 16)

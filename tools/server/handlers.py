@@ -452,17 +452,24 @@ def _handle_switch_table(params):
         jt_size = si.get_jtable_size()
         elem_size = si.get_jtable_element_size()
         cases = []
+        has_base = False
+        try:
+            has_base = bool(si.elbase != 0)
+        except Exception:
+            pass
         for i in range(jt_size):
             addr = si.jumps + i * elem_size
-            if elem_size == 4:
-                target_off = ida_bytes.get_dword(addr)
-            elif elem_size == 8:
+            if elem_size == 8:
                 target_off = ida_bytes.get_qword(addr)
             elif elem_size == 2:
                 target_off = ida_bytes.get_word(addr)
+                if has_base and target_off >= 0x8000:
+                    target_off -= 0x10000
             else:
                 target_off = ida_bytes.get_dword(addr)
-            target = (si.elbase + target_off) if si.has_elbase() else target_off
+                if has_base and target_off >= 0x80000000:
+                    target_off -= 0x100000000
+            target = (si.elbase + target_off) if has_base else target_off
             cases.append({"index": i, "target": _fmt_addr(target)})
         default_ea = si.defjump
         bad = {0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0}
@@ -496,6 +503,7 @@ def _handle_rename_batch(params):
         name = entry.get("name")
         if not addr_str or not name:
             results["failed"] += 1
+            results["renames"].append({"addr": str(addr_str), "name": str(name), "ok": False, "error": "missing addr or name"})
             continue
         try:
             ea = _resolve_addr(addr_str)
@@ -505,17 +513,18 @@ def _handle_rename_batch(params):
                 results["renames"].append({"addr": _fmt_addr(ea), "name": name, "ok": True})
             else:
                 results["failed"] += 1
-                results["renames"].append({"addr": _fmt_addr(ea), "name": name, "ok": False})
-        except Exception:
+                results["renames"].append({"addr": _fmt_addr(ea), "name": name, "ok": False, "error": "set_name failed"})
+        except Exception as e:
             results["failed"] += 1
+            results["renames"].append({"addr": str(addr_str), "name": str(name), "ok": False, "error": str(e)})
     if results["success"] > 0:
         _maybe_save_db()
     return results
 
 
 def _get_segments_info():
-    """Collect segment information (reuses _handle_get_segments)."""
-    return _handle_get_segments({}).get("data", [])
+    """Collect segment information (reuses _handle_get_segments with no pagination limit)."""
+    return _handle_get_segments({"count": 9999}).get("data", [])
 
 
 def _get_imports_summary():
@@ -906,6 +915,9 @@ def _handle_callgraph(params):
     if direction in ("callers", "both"):
         _collect_call_graph(ea, depth, "callers", nodes, edges)
 
+    # Deduplicate edges (can occur with direction "both")
+    edges = list(dict.fromkeys(edges))
+
     root_addr = _fmt_addr(ea)
     dot = _generate_dot_graph(nodes, edges, root_addr)
     mermaid = _generate_mermaid_graph(nodes, edges)
@@ -1007,7 +1019,7 @@ def _list_type_info(check_fn, filt, extra_fn=None):
     result = []
     qty = ida_typeinf.get_ordinal_count(til)
     filt_lower = filt.lower() if filt else ""
-    for ordinal in range(1, qty):
+    for ordinal in range(1, qty + 1):
         tif = ida_typeinf.tinfo_t()
         if tif.get_numbered_type(til, ordinal) and check_fn(tif):
             name = tif.get_type_name()
@@ -1059,7 +1071,7 @@ def _handle_get_struct(params):
             members.append({
                 "offset": m.offset // 8,  # bits to bytes
                 "name": m.name,
-                "size": m.size // 8,
+                "size": max(1, m.size // 8),
                 "type": str(m.type),
             })
     return {

@@ -1539,8 +1539,8 @@ def _display_diff_results(name_a, name_b, funcs_a, funcs_b,
 
 def cmd_compare(args, config, config_path):
     """Compare two versions of a binary (patch diffing)."""
-    binary_a = os.path.abspath(args.binary_a)
-    binary_b = os.path.abspath(args.binary_b)
+    binary_a = os.path.normcase(os.path.abspath(args.binary_a))
+    binary_b = os.path.normcase(os.path.abspath(args.binary_b))
     for path in (binary_a, binary_b):
         if not os.path.isfile(path):
             _log_err(f"File not found: {path}")
@@ -1555,20 +1555,23 @@ def cmd_compare(args, config, config_path):
         cmd_start(sa, config, config_path)
 
     registry = load_registry()
-    instances = [(iid, info, os.path.abspath(info.get("binary", "")))
-                 for iid, info in registry.items()
-                 if os.path.abspath(info.get("binary", "")) in (binary_a, binary_b)
-                 and info.get("state") in ("analyzing", "ready")]
+    instances = {}
+    for iid, info in registry.items():
+        reg_path = os.path.normcase(os.path.abspath(info.get("path", info.get("binary", ""))))
+        if reg_path in (binary_a, binary_b) and info.get("state") in ("analyzing", "ready"):
+            instances[reg_path] = (iid, info)
 
-    if len(instances) < 2:
+    if binary_a not in instances or binary_b not in instances:
         _log_err("Could not start both instances")
         return
 
     _log_info("Waiting for analysis...")
-    for iid, info, _ in instances:
+    for path_key in (binary_a, binary_b):
+        iid, info = instances[path_key]
         cmd_wait(_make_args(id=iid, timeout=300), config)
 
-    ia, ib = instances[0], instances[1]
+    ia = instances[binary_a]
+    ib = instances[binary_b]
     funcs_a = _get_func_map(config, ia[0], ia[1])
     funcs_b = _get_func_map(config, ib[0], ib[1])
     if not funcs_a or not funcs_b:
@@ -1711,6 +1714,9 @@ def cmd_code_diff(args, config):
 
     port_a = info_a.get("port")
     port_b = info_b.get("port")
+    if not port_a or not port_b:
+        _log_err("One or both instances have no port (not ready?). Use 'wait <id>' first.")
+        return
 
     if not func_names:
         # Get common functions, find size-changed ones
