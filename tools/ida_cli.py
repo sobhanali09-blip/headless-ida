@@ -389,9 +389,10 @@ def _spawn_server(config, config_path, binary_path, instance_id, idb_path, log_p
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     env = os.environ.copy()
     env["IDADIR"] = config["ida"]["install_dir"]
+    stderr_file = open(log_path + ".stderr", "w") if log_path else subprocess.DEVNULL
     return subprocess.Popen(
         cmd, creationflags=flags, env=env,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr_file,
     )
 
 
@@ -879,6 +880,12 @@ def cmd_proxy_rename(args, config):
         print(f"[+] Renamed {r['addr']} -> {r['name']}")
 
 
+def cmd_proxy_set_type(args, config):
+    r = _rpc_call(args, config, "set_type", {"addr": args.addr, "type": args.type_str})
+    if r:
+        print(f"[+] Type set at {r['addr']}: {r.get('type', '')}")
+
+
 def cmd_proxy_comment(args, config):
     p = {"addr": args.addr, "comment": args.text}
     if getattr(args, 'repeatable', False): p["repeatable"] = True
@@ -932,6 +939,7 @@ def _build_dispatch(args, config, config_path):
         "comments": lambda: cmd_proxy_comments(args, config),
         "methods": lambda: cmd_proxy_methods(args, config),
         "rename": lambda: cmd_proxy_rename(args, config),
+        "set_type": lambda: cmd_proxy_set_type(args, config),
         "comment": lambda: cmd_proxy_comment(args, config),
         "save": lambda: cmd_proxy_save(args, config),
         "exec": lambda: cmd_proxy_exec(args, config),
@@ -1043,6 +1051,10 @@ def main():
     p = sub.add_parser("rename", parents=[common])
     p.add_argument("addr")
     p.add_argument("name")
+
+    p = sub.add_parser("set_type", parents=[common])
+    p.add_argument("addr")
+    p.add_argument("type_str", metavar="type", help="C type declaration")
 
     p = sub.add_parser("comment", parents=[common])
     p.add_argument("addr")

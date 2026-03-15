@@ -30,8 +30,10 @@ def _detect_elf(f):
     f.seek(4)
     ei_class = struct.unpack("B", f.read(1))[0]
     bits = 64 if ei_class == 2 else 32
+    ei_data = struct.unpack("B", f.read(1))[0]
+    endian = ">" if ei_data == 2 else "<"
     f.seek(18)
-    e_machine = struct.unpack("<H", f.read(2))[0]
+    e_machine = struct.unpack(f"{endian}H", f.read(2))[0]
     arch = _ELF_MACHINE.get(e_machine, f"em_{e_machine:#x}")
     return {"arch": arch, "bits": bits, "file_format": "ELF"}
 
@@ -112,7 +114,9 @@ def _detect_fat(f, magic):
     slices = []
     for _ in range(min(nfat, 20)):
         cputype = struct.unpack(f"{endian}I", f.read(4))[0]
-        f.read(16) if magic in {b"\xCA\xFE\xBA\xBF", b"\xBF\xBA\xFE\xCA"} else f.read(16)
+        # FAT64 entries: 28 bytes after cputype, FAT32: 16 bytes
+        is_fat64 = magic in {b"\xCA\xFE\xBA\xBF", b"\xBF\xBA\xFE\xCA"}
+        f.read(28 if is_fat64 else 16)
         info = _MACHO_CPUTYPE.get(cputype)
         if info:
             slices.append(f"{info[0]} {info[1]}bit")

@@ -45,6 +45,7 @@ DEFAULT_FIND_MAX = 50
 MAX_FIND_RESULTS = 200
 DEFAULT_SEARCH_MAX = 100
 MAX_SEARCH_RESULTS = 500
+MAX_REQUEST_BODY = 1024 * 1024  # 1 MB
 STRING_TYPE_UNICODE = 1
 
 # Segment permissions
@@ -171,11 +172,26 @@ def _paginate(all_data, params):
             "data": data, "saved_to": saved_to}
 
 
-def _save_output(output_path, content, fmt="text"):
-    """Common file save function. fmt: 'text' or 'json'"""
+def _validate_output_path(output_path):
+    """Validate output path is under an allowed directory."""
     if not output_path:
         return None
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    abspath = os.path.abspath(output_path)
+    allowed = _config.get("paths", {}).get("output_dir")
+    if allowed:
+        if not abspath.startswith(os.path.abspath(allowed) + os.sep):
+            raise RpcError("INVALID_PATH",
+                           f"Output path must be under {allowed}",
+                           suggestion="Set paths.output_dir in config.json or use a path under it")
+    return abspath
+
+
+def _save_output(output_path, content, fmt="text"):
+    """Common file save function. fmt: 'text' or 'json'"""
+    output_path = _validate_output_path(output_path)
+    if not output_path:
+        return None
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     encoding = _config["output"]["encoding"]
     with open(output_path, "w", encoding=encoding) as f:
         if fmt == "json":
@@ -225,14 +241,14 @@ def _handle_ping():
 
 def _handle_status():
     import ida_kernwin, ida_loader, idautils
-    funcs = list(idautils.Functions())
+    func_count = sum(1 for _ in idautils.Functions())
     idb = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
     return {
         "state": "ready",
         "binary": os.path.basename(_binary_path),
         "idb_path": idb,
         "decompiler_available": _decompiler_available,
-        "func_count": len(funcs),
+        "func_count": func_count,
         "ida_version": ida_kernwin.get_kernel_version(),
         "server_version": SERVER_VERSION,
         "uptime": round(time.time() - _start_time, 1),
@@ -457,7 +473,10 @@ def _handle_find_func(params):
         raise RpcError("INVALID_PARAMS", "name parameter required")
     use_regex = params.get("regex", False)
     max_results = min(int(params.get("max_results", DEFAULT_SEARCH_MAX)), MAX_SEARCH_RESULTS)
-    pattern = re.compile(name) if use_regex else None
+    try:
+        pattern = re.compile(name) if use_regex else None
+    except re.error as e:
+        raise RpcError("INVALID_PARAMS", f"Invalid regex: {e}")
     matches = []
     for ea in idautils.Functions():
         fn = idc.get_func_name(ea)
@@ -634,6 +653,29 @@ def _handle_get_comments(params):
     }
 
 
+def _handle_set_type(params):
+    import idc, ida_typeinf
+    ea = _resolve_addr(params.get("addr"))
+    type_str = params.get("type")
+    if not type_str:
+        raise RpcError("INVALID_PARAMS", "type parameter required")
+    # Ensure declaration ends with semicolon for parse_decl
+    decl = type_str.rstrip(";") + ";"
+    tif = ida_typeinf.tinfo_t()
+    til = ida_typeinf.get_idati()
+    result = ida_typeinf.parse_decl(tif, til, decl, ida_typeinf.PT_SIL)
+    if result is None:
+        raise RpcError("PARSE_TYPE_FAILED",
+                        f"Cannot parse type declaration: {type_str}",
+                        suggestion="Use C syntax, e.g. 'int __fastcall foo(int a, char *b);'")
+    ok = ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE)
+    if not ok:
+        raise RpcError("SET_TYPE_FAILED", f"Cannot apply type at {_fmt_addr(ea)}")
+    if _config["analysis"]["auto_save"]:
+        save_db()
+    return {"ok": True, "addr": _fmt_addr(ea), "type": str(tif)}
+
+
 def _handle_save_db(params):
     import ida_loader
     ok = save_db()
@@ -690,6 +732,7 @@ _METHODS = {
     "get_bytes": _handle_get_bytes,
     "find_bytes": _handle_find_bytes,
     "set_name": _handle_set_name,
+    "set_type": _handle_set_type,
     "set_comment": _handle_set_comment,
     "get_comments": _handle_get_comments,
     "save_db": _handle_save_db,
@@ -717,6 +760,7 @@ _METHOD_DESCRIPTIONS = [
     ("get_bytes", "Read raw bytes"),
     ("find_bytes", "Search byte pattern"),
     ("set_name", "Rename a symbol"),
+    ("set_type", "Set function/variable type"),
     ("set_comment", "Set a comment"),
     ("get_comments", "Get comments"),
     ("save_db", "Save database"),
@@ -759,6 +803,8 @@ class RpcHandler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get("Content-Length", 0))
             if content_len == 0:
                 raise ValueError("Empty request body")
+            if content_len > MAX_REQUEST_BODY:
+                raise ValueError(f"Request body too large ({content_len} bytes, max {MAX_REQUEST_BODY})")
             body = json.loads(self.rfile.read(content_len))
             method = body.get("method")
             if not method:
@@ -766,9 +812,13 @@ class RpcHandler(BaseHTTPRequestHandler):
             params = body.get("params", {})
             req_id = body.get("id", 1)
 
+            t0 = time.time()
             result = _dispatch(method, params)
+            elapsed = round((time.time() - t0) * 1000)
+            log.info(f"RPC {method} -> OK ({elapsed}ms)")
             self._send_json({"result": result, "id": req_id})
         except RpcError as e:
+            log.warning(f"RPC {locals().get('method', '?')} -> {e.code}: {e.message}")
             self._send_json({"error": {"code": e.code, "message": e.message,
                              "suggestion": e.suggestion}, "id": req_id})
         except (json.JSONDecodeError, ValueError) as e:
