@@ -25,6 +25,7 @@ from .commands import (
     cmd_cross_refs, cmd_decompile_all, cmd_type_info,
     cmd_strings_xrefs, cmd_func_similarity, cmd_data_refs,
     cmd_basic_blocks,
+    cmd_proxy_callers, cmd_proxy_callees,
 )
 
 
@@ -89,6 +90,8 @@ def _build_dispatch(args, config, config_path):
         "func-similarity": lambda: cmd_func_similarity(args, config),
         "data-refs": lambda: cmd_data_refs(args, config),
         "basic-blocks": lambda: cmd_basic_blocks(args, config),
+        "callers": lambda: cmd_proxy_callers(args, config),
+        "callees": lambda: cmd_proxy_callees(args, config),
     }
     for cmd_name, (method, header_fn, format_fn) in _LIST_COMMANDS.items():
         d[cmd_name] = (lambda m=method, h=header_fn, f=format_fn:
@@ -149,6 +152,9 @@ def _build_parser():
         p.add_argument("--count", type=int, default=None)
         p.add_argument("--filter", default=None)
         p.add_argument("--out", default=None)
+        if name == "strings":
+            p.add_argument("--encoding", choices=["unicode", "ascii"], default=None,
+                           help="Filter by string encoding")
 
     p = sub.add_parser("segments", parents=[common])
     p.add_argument("--out", default=None)
@@ -158,6 +164,7 @@ def _build_parser():
     p.add_argument("addr")
     p.add_argument("--out", default=None)
     p.add_argument("--with-xrefs", action="store_true", help="Include caller/callee xrefs")
+    p.add_argument("--raw", action="store_true", help="Pure C code only (no addresses/metadata)")
 
     p = sub.add_parser("decompile_batch", parents=[common])
     p.add_argument("addrs", nargs="+")
@@ -171,6 +178,12 @@ def _build_parser():
     p = sub.add_parser("xrefs", parents=[common])
     p.add_argument("addr")
     p.add_argument("--direction", choices=["to", "from", "both"], default="to")
+
+    p = sub.add_parser("callers", help="Who calls this address (shortcut for xrefs --direction to)", parents=[common])
+    p.add_argument("addr")
+
+    p = sub.add_parser("callees", help="What this function calls (shortcut for xrefs --direction from)", parents=[common])
+    p.add_argument("addr")
 
     p = sub.add_parser("find_func", parents=[common])
     p.add_argument("name")

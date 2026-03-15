@@ -62,6 +62,7 @@ ida-cli -b <hint> imagebase               # Binary base address
 # Data collection (use --out to save context window space)
 ida-cli -b <hint> functions [--filter X] [--count N] [--offset N] [--out F]
 ida-cli -b <hint> strings [--filter X] [--count N] [--offset N] [--out F]
+  # Options: --encoding unicode|ascii (filter by string type)
 ida-cli -b <hint> imports [--filter X] [--count N] [--out F]
 ida-cli -b <hint> exports [--out F]
 ```
@@ -70,6 +71,7 @@ ida-cli -b <hint> exports [--out F]
 ```bash
 # Decompile (--out suppresses inline output, saves to file only)
 ida-cli -b <hint> decompile <addr|name> [--out /tmp/func.c]
+ida-cli -b <hint> decompile <addr|name> --raw            # Pure C code (no header/addresses)
 ida-cli -b <hint> decompile <addr|name> --with-xrefs    # Include callers/callees
 ida-cli -b <hint> decompile <addr|name> --out result.md  # Markdown output
 
@@ -96,6 +98,8 @@ ida-cli -b <hint> auto-rename [--apply] [--max-funcs 200]  # Heuristic rename su
 ### Cross-References
 ```bash
 ida-cli -b <hint> xrefs <addr> --direction to|from|both
+ida-cli -b <hint> callers <addr>                           # Shortcut: xrefs --direction to
+ida-cli -b <hint> callees <addr>                           # Shortcut: xrefs --direction from
 ida-cli -b <hint> cross-refs <addr|name> --depth 3 --direction to|from|both
   # Options: --format mermaid|dot, --out F
 ```

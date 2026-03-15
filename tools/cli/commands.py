@@ -333,8 +333,11 @@ def cmd_proxy_segments(args, config):
 
 def cmd_proxy_decompile(args, config):
     with_xrefs = _opt(args, 'with_xrefs', False)
+    raw = _opt(args, 'raw', False)
     md_out = _is_md_out(args)
     p = {"addr": args.addr}
+    if raw:
+        p["raw"] = True
     _maybe_output_param(args, p, md_out)
     method = "decompile_with_xrefs" if with_xrefs else "decompile"
     r = _rpc_call(args, config, method, p)
@@ -342,10 +345,13 @@ def cmd_proxy_decompile(args, config):
     if md_out:
         _save_local(args.out, _md_decompile(r, with_xrefs))
         return
-    header = f"// {r.get('name', '')} @ {r.get('addr', '')}"
     code = r.get("code", "")
-    output = f"{header}\n{code}"
-    if with_xrefs:
+    if raw:
+        output = code
+    else:
+        header = f"// {r.get('name', '')} @ {r.get('addr', '')}"
+        output = f"{header}\n{code}"
+    if with_xrefs and not raw:
         callers = r.get("callers", [])
         callees = r.get("callees", [])
         if callers:
@@ -414,6 +420,18 @@ def cmd_proxy_xrefs(args, config):
             print(f"Xrefs FROM {args.addr} ({r.get('total', 0)})")
             for ref in r.get("refs", []):
                 print(f"  {ref['to_addr']}  {ref.get('to_name', ''):<30}  {ref['type']}")
+
+
+def cmd_proxy_callers(args, config):
+    """Shortcut: xrefs --direction to (who calls this)."""
+    args.direction = "to"
+    cmd_proxy_xrefs(args, config)
+
+
+def cmd_proxy_callees(args, config):
+    """Shortcut: xrefs --direction from (what this calls)."""
+    args.direction = "from"
+    cmd_proxy_xrefs(args, config)
 
 
 def cmd_proxy_find_func(args, config):

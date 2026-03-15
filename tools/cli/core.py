@@ -604,7 +604,8 @@ def _build_params(args, mapping):
 
 def _list_params(args):
     return _build_params(args, {"offset": "offset", "count": "count",
-                                "filter": "filter", "out": "output"})
+                                "filter": "filter", "out": "output",
+                                "encoding": "encoding"})
 
 
 # ── List-type command factory ──

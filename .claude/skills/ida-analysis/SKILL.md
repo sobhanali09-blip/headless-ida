@@ -64,6 +64,7 @@ ida-cli -b <hint> imagebase               # Binary base address
 # Data collection (use --out to save context window space)
 ida-cli -b <hint> functions [--filter X] [--count N] [--offset N] [--out F]
 ida-cli -b <hint> strings [--filter X] [--count N] [--offset N] [--out F]
+  # Options: --encoding unicode|ascii (filter by string type)
 ida-cli -b <hint> imports [--filter X] [--count N] [--out F]
 ida-cli -b <hint> exports [--out F]
 ```
@@ -72,6 +73,7 @@ ida-cli -b <hint> exports [--out F]
 ```bash
 # Decompile (--out suppresses inline output, saves to file only)
 ida-cli -b <hint> decompile <addr|name> [--out /tmp/func.c]
+ida-cli -b <hint> decompile <addr|name> --raw            # Pure C code (no header/addresses)
 ida-cli -b <hint> decompile <addr|name> --with-xrefs    # Include callers/callees
 ida-cli -b <hint> decompile <addr|name> --out result.md  # Markdown output
 
@@ -98,6 +100,8 @@ ida-cli -b <hint> auto-rename [--apply] [--max-funcs 200]  # Heuristic rename su
 ### Cross-References
 ```bash
 ida-cli -b <hint> xrefs <addr> --direction to|from|both
+ida-cli -b <hint> callers <addr>                           # Shortcut: xrefs --direction to
+ida-cli -b <hint> callees <addr>                           # Shortcut: xrefs --direction from
 ida-cli -b <hint> cross-refs <addr|name> --depth 3 --direction to|from|both
   # Options: --format mermaid|dot, --out F
 ```
@@ -362,6 +366,113 @@ Each subagent returns only a summary, keeping main context clean.
 - Use `decompile_batch` instead of multiple single decompile calls
 - Use `profile run <type>` for automated reconnaissance
 - Use `--json` for machine-readable output when post-processing
+
+## Output Format Examples
+
+### summary
+```
+Binary:      example.exe
+Decompiler:  True
+IDA:         9.3
+Functions:   521  (avg size: 293 bytes)
+Strings:     584
+Imports:     340
+Exports:     1
+```
+
+### decompile
+```
+// wWinMain @ 0x140010100
+int __stdcall wWinMain(HINSTANCE hInstance, ...) {
+  /* 0x140010119 */ sub_rsp(0x90);
+  ...
+}
+```
+
+### decompile --raw
+```
+int __stdcall wWinMain(HINSTANCE hInstance, ...) {
+  sub_rsp(0x90);
+  ...
+}
+```
+(No header line, no address comments — minimal tokens for LLM analysis)
+
+### functions
+```
+0x140001000  sub_140001000                                     size=42
+0x14000102A  wWinMain                                          size=1200
+```
+
+### xrefs / callers / callees
+```
+Xrefs TO 0x140010100 (3)
+  0x14001A000  sub_14001A000                     Code_Near
+  0x14001B200  __mainCRTStartup                  Code_Near
+```
+
+### callgraph (mermaid)
+```mermaid
+graph TD
+  main --> init_config
+  main --> process_data
+  process_data --> validate_input
+```
+
+## Analysis Decision Flowchart
+
+```
+What are you analyzing?
+│
+├─ Unknown binary (first look)
+│  → summary → strings --filter <keyword> → xrefs → decompile
+│
+├─ Looking for specific function
+│  → find_func <name> [--regex] → decompile → callers / callees
+│
+├─ Vulnerability hunting
+│  → imports (memcpy, strcpy, sprintf, system, exec)
+│  → xrefs on dangerous funcs → decompile call sites
+│  → bytes to verify buffer sizes
+│
+├─ Malware analysis
+│  → profile run malware (automated recon)
+│  → strings (C2, URLs, registry) → imports (network, process APIs)
+│  → find_func --regex "crypt|encode|xor" → decompile_batch
+│
+├─ Comparing two versions (patch diff)
+│  → start both binaries → code-diff or compare
+│
+├─ Understanding call flow
+│  → callgraph <addr> --direction callees --depth 3
+│  → basic-blocks <addr> for CFG
+│
+├─ Bulk analysis / full dump
+│  → decompile-all --out /tmp/all.c [--filter X]
+│  → decompile_batch <addr1> <addr2> ... --out /tmp/batch.c
+│
+└─ Firmware/IoT
+   → segments (memory layout) → strings (device IDs, protocols)
+   → find_func --regex "uart|spi|i2c|gpio" → exports
+```
+
+## Common Pitfalls
+
+1. **Not waiting after start** — `start` returns immediately while IDA analyzes. Always `wait <id> --timeout 300` before any analysis command.
+
+2. **Forgetting `--out` for decompile** — Decompile output floods context window. Always use `--out /tmp/file` then `Read` the file.
+
+3. **Address format** — IDA expects hex with `0x` prefix (e.g., `0x140001000`). Function names also work (e.g., `main`, `sub_140001000`).
+
+4. **xrefs direction confusion** — `--direction to` = "who calls this" (callers), `--direction from` = "what this calls" (callees). Use `callers`/`callees` shortcuts to avoid confusion.
+
+5. **Locked .i64** — Error `open_database returned 2` means IDB is locked/corrupted. Delete the `.i64` file and restart with `--fresh`.
+
+6. **No decompiler** — Not all IDA installs have Hex-Rays. Check `summary` for `decompiler: true/false`. Without it, use `disasm` instead.
+
+7. **Forgetting to save** — After `rename`/`set_type`/`comment`, run `save` to persist changes to the .i64 database.
+
+8. **Context flooding from large lists** — Never fetch all functions/strings at once. Use `--count 30` and `--offset` for pagination.
 
 ## Error Handling
 

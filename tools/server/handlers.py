@@ -75,8 +75,15 @@ def _handle_get_functions(params):
 def _handle_get_strings(params):
     import idautils, idc
     filt = params.get("filter")
+    enc_filter = params.get("encoding")  # "unicode" or "ascii" or None
     strings = []
     for s in idautils.Strings():
+        enc = "utf-16" if s.strtype == STRING_TYPE_UNICODE else "ascii"
+        if enc_filter:
+            if enc_filter == "unicode" and enc != "utf-16":
+                continue
+            if enc_filter == "ascii" and enc != "ascii":
+                continue
         val = idc.get_strlit_contents(s.ea, s.length, s.strtype)
         if val is None:
             continue
@@ -86,7 +93,6 @@ def _handle_get_strings(params):
             decoded = val.hex()
         if filt and filt.lower() not in decoded.lower():
             continue
-        enc = "utf-16" if s.strtype == STRING_TYPE_UNICODE else "ascii"
         strings.append({"addr": _fmt_addr(s.ea), "value": decoded,
                          "length": s.length, "encoding": enc})
     return _paginate(strings, params)
@@ -162,8 +168,13 @@ def _decompile_func(ea):
 
 
 def _handle_decompile(params):
+    import re
     ea = _resolve_addr(params.get("addr"))
     func, code, name = _decompile_func(ea)
+    if params.get("raw"):
+        # Strip IDA address comments like /* 0x140001234 */ and clean up
+        code = re.sub(r'/\*\s*0x[0-9A-Fa-f]+\s*\*/', '', code)
+        code = re.sub(r'\n{3,}', '\n\n', code)  # collapse multiple blank lines
     saved_to = _save_output(params.get("output"), code)
     return {"addr": _fmt_addr(func.start_ea), "name": name,
             "code": code, "saved_to": saved_to}
