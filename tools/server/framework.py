@@ -259,8 +259,8 @@ def _perm_str(perm):
 
 def _paginate(all_data, params):
     cfg_out = _config["output"]
-    offset = int(params.get("offset", 0))
-    count = min(int(params.get("count", cfg_out["default_count"])), cfg_out["max_count"])
+    offset = max(0, int(params.get("offset", 0)))
+    count = max(0, min(int(params.get("count", cfg_out["default_count"])), cfg_out["max_count"]))
     data = all_data[offset:offset + count]
     saved_to = _save_output(params.get("output"), data, fmt="json")
     return {"total": len(all_data), "offset": offset, "count": len(data),

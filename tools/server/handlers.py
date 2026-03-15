@@ -258,10 +258,12 @@ def _handle_decompile_batch(params):
             f"// ── {r['name']} ({r['addr']}) ──\n{r['code']}"
             for r in results if "code" in r
         )
-        _save_output(output_path, text)
+        saved_to = _save_output(output_path, text)
+    else:
+        saved_to = None
     return {"total": len(addrs), "success": success,
             "failed": len(addrs) - success, "functions": results,
-            "saved_to": output_path if output_path else None}
+            "saved_to": saved_to}
 
 
 def _handle_disasm(params):
@@ -1416,7 +1418,7 @@ def _handle_apply_sig(params):
     import ida_funcs as _idf
     try:
         result = _idf.plan_to_apply_idasgn(sig_name)
-        # Count functions before/after
+        _maybe_save_db()
         return {"ok": True, "signature": sig_name, "result": result}
     except Exception as e:
         raise RpcError("APPLY_SIG_FAILED", f"Cannot apply signature: {e}")
