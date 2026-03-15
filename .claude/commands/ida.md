@@ -316,8 +316,8 @@ ida-cli -b <hint> exec "import idc; print(idc.get_segm_name(0x140001000))"
 
 ## 판단 기준: IDA vs 다른 도구
 - Java/Kotlin 코드 → JADX
-- 간단한 .so 확인 → Ghidra
-- 보안 솔루션 핵심 로직, Ghidra 결과 불명확 → **IDA CLI 사용**
+- 네이티브 바이너리 (.so, .dll, .exe, .dylib) → **IDA CLI 사용**
+- 보안 솔루션 핵심 로직 → **IDA CLI 사용**
 - 멀티 아키텍처 (ARM/MIPS/PPC/V850/ARC) → **IDA CLI 사용**
 - 펌웨어/IoT 바이너리 → **IDA CLI 사용**
 

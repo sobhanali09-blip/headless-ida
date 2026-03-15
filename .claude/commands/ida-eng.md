@@ -317,8 +317,8 @@ ida-cli -b <hint> exec "import idc; print(idc.get_segm_name(0x140001000))"
 
 ## Decision Criteria: IDA vs Other Tools
 - Java/Kotlin code → JADX
-- Simple .so inspection → Ghidra
-- Security solution core logic, unclear Ghidra results → **Use IDA CLI**
+- Native binaries (.so, .dll, .exe, .dylib) → **Use IDA CLI**
+- Security solution core logic → **Use IDA CLI**
 - Multi-architecture (ARM/MIPS/PPC/V850/ARC) → **Use IDA CLI**
 - Firmware/IoT binaries → **Use IDA CLI**
 

@@ -321,8 +321,7 @@ Search strings/imports for: root, jailbreak, ssl, cert, integrity, frida, xposed
 | Binary Type | Tool |
 |-------------|------|
 | Java/Kotlin (APK) | JADX |
-| Simple .so inspection | Ghidra |
-| Native code, security solutions, multi-arch | **IDA CLI** |
+| Native code (.so, .dll, .exe, .dylib), security solutions, multi-arch | **IDA CLI** |
 | Firmware/IoT | **IDA CLI** |
 
 ## User Argument: $ARGUMENTS
