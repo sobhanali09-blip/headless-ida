@@ -1315,8 +1315,13 @@ def cmd_structs(args, config):
         r = _rpc_call(args, config, "list_structs", p)
         if not r:
             return
-        print(f"  Total: {r.get('total', 0)}")
-        for s in r.get("structs", []):
+        items = r.get("structs", [])
+        total = len(items)
+        offset = _opt(args, 'offset', 0) or 0
+        count = _opt(args, 'count') or len(items)
+        items = items[offset:offset + count]
+        print(f"  Total: {total}" + (f" (showing {len(items)} from offset {offset})" if offset or count < total else ""))
+        for s in items:
             kind = "union" if s.get("is_union") else "struct"
             print(f"    {s['name']:<30}  {kind:<6}  size={s['size']:<6}  members={s['member_count']}")
 
@@ -1508,8 +1513,13 @@ def cmd_enums(args, config):
         r = _rpc_call(args, config, "list_enums", p)
         if not r:
             return
-        print(f"  Total: {r.get('total', 0)}")
-        for e in r.get("enums", []):
+        items = r.get("enums", [])
+        total = len(items)
+        offset = _opt(args, 'offset', 0) or 0
+        count = _opt(args, 'count') or len(items)
+        items = items[offset:offset + count]
+        print(f"  Total: {total}" + (f" (showing {len(items)} from offset {offset})" if offset or count < total else ""))
+        for e in items:
             print(f"    {e['name']:<30}  members={e['member_count']}")
 
     elif action == "show":
@@ -1737,10 +1747,17 @@ def cmd_sigs(args, config):
 
 def cmd_update(args):
     """Self-update from git repository."""
+    # Walk up from tools/ to find the git root
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    git_dir = os.path.join(repo_dir, ".git")
-    if not os.path.isdir(git_dir):
-        _log_err(f"Not a git repository: {repo_dir}")
+    while repo_dir != os.path.dirname(repo_dir):  # stop at filesystem root
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            break
+        repo_dir = os.path.dirname(repo_dir)
+    else:
+        _log_err("Not inside a git repository")
+        return
+    if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        _log_err("Not inside a git repository")
         return
     _log_info(f"Updating from: {repo_dir}")
     try:
@@ -1766,7 +1783,14 @@ def cmd_completions(args):
         "decompile", "decompile_batch", "disasm", "xrefs",
         "find_func", "func_info", "imagebase", "bytes", "find_pattern",
         "comments", "methods", "rename", "set_type", "comment",
-        "save", "exec", "summary", "diff", "update", "completions",
+        "save", "exec", "summary", "diff", "batch", "bookmark",
+        "profile", "report", "shell", "annotations", "callgraph",
+        "patch", "search-const", "structs", "snapshot", "compare",
+        "enums", "search-code", "code-diff", "auto-rename",
+        "export-script", "vtables", "sigs", "cross-refs",
+        "decompile-all", "type-info", "strings-xrefs",
+        "func-similarity", "data-refs", "basic-blocks",
+        "update", "completions",
     ]
     if shell == "bash":
         print("""# ida-cli bash completion
@@ -2004,16 +2028,17 @@ def cmd_basic_blocks(args, config):
     r = _rpc_call(args, config, "basic_blocks", p)
     if not r:
         return
+    graph_only = _opt(args, 'graph_only', False)
     print(f"  Function: {r.get('name', '')} ({r.get('addr', '')})")
     print(f"  Blocks: {r.get('block_count', 0)}, Edges: {r.get('edge_count', 0)}")
-    if not _opt(args, 'graph_only', False):
+    if not graph_only:
         for bb in r.get("blocks", []):
             succs = ", ".join(bb.get("successors", []))
             print(f"    {bb['start']}-{bb['end']}  size={bb['size']}  -> [{succs}]")
-    out_path = _opt(args, 'out')
     content = r.get("dot" if fmt == "dot" else "mermaid", "")
+    out_path = _opt(args, 'out')
     if out_path:
         _save_local(out_path, content)
-    elif _opt(args, 'graph_only', False):
+    else:
         print()
         print(content)

@@ -1014,7 +1014,13 @@ def _handle_snapshot_restore(params):
     import ida_loader, shutil
     filename = _require_param(params, "filename")
     if not os.path.isfile(filename):
-        raise RpcError("FILE_NOT_FOUND", f"Snapshot file not found: {filename}")
+        # Auto-resolve: try relative to IDB directory
+        idb_dir = os.path.dirname(ida_loader.get_path(ida_loader.PATH_TYPE_IDB))
+        candidate = os.path.join(idb_dir, filename)
+        if os.path.isfile(candidate):
+            filename = candidate
+        else:
+            raise RpcError("FILE_NOT_FOUND", f"Snapshot file not found: {filename}")
     idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
     # Backup current before restore
     import datetime
