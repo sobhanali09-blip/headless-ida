@@ -99,6 +99,34 @@ ida-cli -b <hint> search-const 0x1234 --max 20
 ida-cli -b <hint> callgraph <주소|이름> --depth 3 --direction callees
 ida-cli -b <hint> callgraph <주소> --format dot --out graph.dot
 
+# 다단계 xref 체인 추적
+ida-cli -b <hint> cross-refs <주소|이름> --depth 3 --direction to
+ida-cli -b <hint> cross-refs <주소> --direction both --format dot --out xrefs.dot
+
+# 기본 블록 + CFG (Control Flow Graph)
+ida-cli -b <hint> basic-blocks <주소|이름>
+ida-cli -b <hint> basic-blocks <주소> --format dot --out cfg.dot
+ida-cli -b <hint> basic-blocks <주소> --graph-only  # 그래프만 출력
+
+# 함수 유사도 비교
+ida-cli -b <hint> func-similarity <주소A> <주소B>
+
+# 문자열 + 참조 함수 한번에 조회
+ida-cli -b <hint> strings-xrefs --filter http --max 20
+ida-cli -b <hint> strings-xrefs --min-refs 3 --out /tmp/str_xrefs.json
+
+# 데이터 참조 분석 (글로벌 변수)
+ida-cli -b <hint> data-refs --max 50
+ida-cli -b <hint> data-refs --segment .data --filter config
+
+# 전체 함수 일괄 디컴파일
+ida-cli -b <hint> decompile-all --out /tmp/all_funcs.c
+ida-cli -b <hint> decompile-all --out /tmp/filtered.c --filter parse
+
+# Local Types 조회 (typedef, funcptr 등)
+ida-cli -b <hint> type-info list [--kind typedef|funcptr|struct|enum|other]
+ida-cli -b <hint> type-info show <타입_이름>
+
 # 디컴파일 결과 내 검색
 ida-cli -b <hint> search-code "LoadString" --max 10
 ida-cli -b <hint> search-code "memcpy" --max-funcs 1000

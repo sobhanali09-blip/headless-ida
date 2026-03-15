@@ -99,6 +99,34 @@ ida-cli -b <hint> search-const 0x1234 --max 20
 ida-cli -b <hint> callgraph <addr|name> --depth 3 --direction callees
 ida-cli -b <hint> callgraph <addr> --format dot --out graph.dot
 
+# Multi-level xref chain tracing
+ida-cli -b <hint> cross-refs <addr|name> --depth 3 --direction to
+ida-cli -b <hint> cross-refs <addr> --direction both --format dot --out xrefs.dot
+
+# Basic blocks + CFG (Control Flow Graph)
+ida-cli -b <hint> basic-blocks <addr|name>
+ida-cli -b <hint> basic-blocks <addr> --format dot --out cfg.dot
+ida-cli -b <hint> basic-blocks <addr> --graph-only  # graph output only
+
+# Function similarity comparison
+ida-cli -b <hint> func-similarity <addrA> <addrB>
+
+# Strings + referencing functions at once
+ida-cli -b <hint> strings-xrefs --filter http --max 20
+ida-cli -b <hint> strings-xrefs --min-refs 3 --out /tmp/str_xrefs.json
+
+# Data reference analysis (global variables)
+ida-cli -b <hint> data-refs --max 50
+ida-cli -b <hint> data-refs --segment .data --filter config
+
+# Decompile all functions
+ida-cli -b <hint> decompile-all --out /tmp/all_funcs.c
+ida-cli -b <hint> decompile-all --out /tmp/filtered.c --filter parse
+
+# Local Types (typedef, funcptr, etc.)
+ida-cli -b <hint> type-info list [--kind typedef|funcptr|struct|enum|other]
+ida-cli -b <hint> type-info show <type_name>
+
 # Search in decompiled pseudocode
 ida-cli -b <hint> search-code "LoadString" --max 10
 ida-cli -b <hint> search-code "memcpy" --max-funcs 1000

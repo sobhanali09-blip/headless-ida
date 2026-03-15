@@ -209,6 +209,14 @@ Commands are primarily used by AI, listed here for reference.
 | `methods <class>` | List class methods |
 | `summary` | Comprehensive binary overview (segments, imports, functions, strings) |
 | `search-code <query>` | Search within decompiled pseudocode |
+| `cross-refs <addr> [--depth] [--direction]` | Multi-level xref chain tracing (mermaid/DOT) |
+| `basic-blocks <addr> [--format] [--graph-only]` | Basic blocks + CFG (Control Flow Graph) |
+| `func-similarity <addrA> <addrB>` | Compare function similarity metrics |
+| `strings-xrefs [--filter] [--min-refs]` | Strings with referencing functions |
+| `data-refs [--segment] [--filter]` | Data reference analysis (global variables) |
+| `decompile-all --out <file> [--filter]` | Decompile all functions to file |
+| `type-info list [--kind]` | List local types (typedef/funcptr/struct/enum) |
+| `type-info show <name>` | Show type details |
 | `diff <a> <b>` | Compare functions between two instances |
 | `code-diff <inst_a> <inst_b>` | Diff decompiled pseudocode between instances |
 | `batch <dir>` | Batch analyze all binaries in a directory |
@@ -498,6 +506,14 @@ shell/터미널 접근이 가능한 AI면 `ida_cli.py`를 직접 호출할 수 �
 | `methods <class>` | 클래스 메서드 목록 |
 | `summary` | 바이너리 종합 개요 (세그먼트, 임포트, 함수, 문자열) |
 | `search-code <query>` | 디컴파일된 의사코드 내 검색 |
+| `cross-refs <addr> [--depth] [--direction]` | 다단계 xref 체인 추적 (mermaid/DOT) |
+| `basic-blocks <addr> [--format] [--graph-only]` | 기본 블록 + CFG (Control Flow Graph) |
+| `func-similarity <addrA> <addrB>` | 함수 유사도 비교 |
+| `strings-xrefs [--filter] [--min-refs]` | 문자열 + 참조 함수 한번에 조회 |
+| `data-refs [--segment] [--filter]` | 데이터 참조 분석 (글로벌 변수) |
+| `decompile-all --out <file> [--filter]` | 전체 함수 일괄 디컴파일 |
+| `type-info list [--kind]` | 로컬 타입 목록 (typedef/funcptr/struct/enum) |
+| `type-info show <name>` | 타입 상세 정보 |
 | `diff <a> <b>` | 두 인스턴스 간 함수 비교 |
 | `code-diff <inst_a> <inst_b>` | 두 인스턴스 간 디컴파일 코드 비교 |
 | `batch <dir>` | 디렉토리 내 바이너리 일괄 분석 |
