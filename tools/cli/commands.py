@@ -2185,8 +2185,7 @@ def cmd_switch_table(args, config):
         default = sw.get("default") or "none"
         print(f"\n    Switch @ {sw['addr']}  ({sw['case_count']} cases, default={default})")
         for case in sw.get("cases", []):
-            vals = ", ".join(str(v) for v in case.get("values", []))
-            print(f"      case {vals}: -> {case['target']}")
+            print(f"      case {case['index']}: -> {case['target']}")
 
 
 # ─────────────────────────────────────────────
