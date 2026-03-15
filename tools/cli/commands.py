@@ -153,6 +153,43 @@ def cmd_stop(args, config):
     remove_auth_token(config["security"]["auth_token_file"], iid)
 
 
+def cmd_restart(args, config, config_path):
+    """Stop and re-start an instance with the same binary and IDB."""
+    iid = args.id
+    registry = load_registry()
+    info = registry.get(iid)
+    if not info:
+        _log_err(f"Instance '{iid}' not found")
+        return
+    binary_path = info.get("path")
+    idb_path = info.get("idb_path")
+    if not binary_path:
+        _log_err("Cannot restart: binary path unknown")
+        return
+    # Derive idb_dir from idb_path
+    idb_dir = os.path.dirname(idb_path) if idb_path else None
+
+    # Stop
+    _log_info(f"Stopping {iid}...")
+    cmd_stop(args, config)
+    time.sleep(1)
+
+    # Re-start with same binary and idb_dir
+    class _RestartArgs:
+        pass
+    new_args = _RestartArgs()
+    new_args.binary = binary_path
+    new_args.idb_dir = idb_dir
+    new_args.force = False
+    new_args.fresh = _opt(args, 'fresh', False)
+    new_args.arch = None
+    new_args.binary_hint = None
+    new_args.instance = None
+    new_args.json_output = False
+    new_args.config = None
+    cmd_start(new_args, config, config_path)
+
+
 def cmd_wait(args, config):
     iid = args.id
     timeout = _opt(args, 'timeout', 300)

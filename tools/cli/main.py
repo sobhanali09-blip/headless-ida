@@ -26,6 +26,7 @@ from .commands import (
     cmd_strings_xrefs, cmd_func_similarity, cmd_data_refs,
     cmd_basic_blocks,
     cmd_proxy_callers, cmd_proxy_callees,
+    cmd_restart,
 )
 
 
@@ -92,6 +93,7 @@ def _build_dispatch(args, config, config_path):
         "basic-blocks": lambda: cmd_basic_blocks(args, config),
         "callers": lambda: cmd_proxy_callers(args, config),
         "callees": lambda: cmd_proxy_callees(args, config),
+        "restart": lambda: cmd_restart(args, config, config_path),
     }
     for cmd_name, (method, header_fn, format_fn) in _LIST_COMMANDS.items():
         d[cmd_name] = (lambda m=method, h=header_fn, f=format_fn:
@@ -127,6 +129,10 @@ def _build_parser():
 
     p = sub.add_parser("stop", help="Stop instance", parents=[common])
     p.add_argument("id")
+
+    p = sub.add_parser("restart", help="Stop and re-start instance", parents=[common])
+    p.add_argument("id")
+    p.add_argument("--fresh", action="store_true", help="Ignore existing .i64, reanalyze")
 
     p = sub.add_parser("status", help="Instance status", parents=[common])
     p.add_argument("id", nargs="?", default=None)
