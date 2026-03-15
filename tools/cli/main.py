@@ -2,7 +2,7 @@
 
 import argparse
 
-from common import init_registry_paths
+from shared import init_registry_paths
 
 from .core import (
     load_config, _merge_project_config, _LIST_COMMANDS, _cmd_proxy_list,

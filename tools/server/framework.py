@@ -18,7 +18,7 @@ from logging.handlers import RotatingFileHandler
 
 _SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _SCRIPT_DIR)
-from common import (
+from shared import (
     load_config, init_registry_paths,
     acquire_lock, release_lock,
     load_registry, save_registry,

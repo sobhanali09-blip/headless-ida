@@ -31,7 +31,7 @@ def _handle_ping():
 
 def _handle_status():
     import ida_kernwin, ida_loader, idautils
-    from common import file_md5
+    from shared import file_md5
     func_count = sum(1 for _ in idautils.Functions())
     idb = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
     return {

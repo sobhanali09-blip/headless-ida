@@ -24,7 +24,7 @@ from .core import (
     STOP_RPC_TIMEOUT, CLEANUP_AGE_SECONDS, PID_CREATE_TIME_TOLERANCE,
     _SCRIPT_DIR,
 )
-from arch_detect import arch_detect
+from shared import arch_detect
 import glob
 import subprocess
 
@@ -91,7 +91,7 @@ def cmd_start(args, config, config_path):
         meta = _load_idb_metadata(idb_path)
         stored_md5 = meta.get("binary_md5")
         if stored_md5:
-            from common import file_md5
+            from shared import file_md5
             current_md5 = file_md5(binary_path)
             if stored_md5 != current_md5:
                 _log_warn("Binary changed since .i64 was created.")

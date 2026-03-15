@@ -21,16 +21,15 @@ except ImportError:
 
 _SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _SCRIPT_DIR)
-from arch_detect import arch_detect
-from contextlib import contextmanager
-from common import (
+from shared import (
+    arch_detect,
     load_config as _load_config_core,
     init_registry_paths, acquire_lock, release_lock,
     load_registry, save_registry,
     file_md5, remove_auth_token,
+    CONFIG_JSON as _DEFAULT_CONFIG,
 )
-
-_DEFAULT_CONFIG = os.path.join(_SCRIPT_DIR, "config.json")
+from contextlib import contextmanager
 
 # ─────────────────────────────────────────────
 # CLI Output Helpers
