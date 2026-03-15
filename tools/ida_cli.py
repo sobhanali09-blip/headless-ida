@@ -398,7 +398,12 @@ def _spawn_server(config, config_path, binary_path, instance_id, idb_path, log_p
     else:
         # Unix: detach via double-fork behavior with start_new_session
         popen_kwargs["start_new_session"] = True
-    return subprocess.Popen(cmd, **popen_kwargs)
+    try:
+        return subprocess.Popen(cmd, **popen_kwargs)
+    except Exception:
+        if stderr_file is not subprocess.DEVNULL:
+            stderr_file.close()
+        raise
 
 
 def _wait_for_start(instance_id):
@@ -535,13 +540,10 @@ def cmd_wait(args, config):
             time.sleep(poll)
             continue
         if state == "ready" and port:
-            try:
-                resp = post_rpc(config, port, "ping", iid)
-                if resp.get("result", {}).get("state") == "ready":
-                    print("[+] ready")
-                    return
-            except (ConnectionError, OSError):
-                pass
+            resp = post_rpc(config, port, "ping", iid)
+            if resp.get("result", {}).get("state") == "ready":
+                print("[+] ready")
+                return
         if state == "error":
             print(f"[-] Analysis failed. Check: ida_cli.py logs {iid}")
             return

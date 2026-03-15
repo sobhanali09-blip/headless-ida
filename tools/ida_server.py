@@ -792,8 +792,9 @@ class RpcHandler(BaseHTTPRequestHandler):
                              "message": "Invalid Host header"}, "id": None})
             return
 
+        import hmac
         auth = self.headers.get("Authorization", "")
-        if auth != f"Bearer {_auth_token}":
+        if not hmac.compare_digest(auth, f"Bearer {_auth_token}"):
             self._send_json({"error": {"code": "AUTH_FAILED",
                              "message": "Invalid or missing auth token"}, "id": None})
             return

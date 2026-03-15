@@ -80,6 +80,7 @@ def init_registry_paths(config):
 
 def acquire_lock(timeout=DEFAULT_LOCK_TIMEOUT):
     """Acquires the registry file lock."""
+    os.makedirs(os.path.dirname(_lock_path), exist_ok=True)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
