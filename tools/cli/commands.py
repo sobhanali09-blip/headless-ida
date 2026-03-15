@@ -194,6 +194,19 @@ def cmd_list(args, config):
     if not registry:
         _log_info("No active instances")
         return
+    if _opt(args, 'json_output', False):
+        import json
+        out = {}
+        for iid, info in registry.items():
+            out[iid] = {
+                "state": info.get("state", "unknown"),
+                "binary": info.get("binary", "?"),
+                "port": info.get("port"),
+                "pid": info.get("pid"),
+                "idb": info.get("idb"),
+            }
+        print(json.dumps(out, indent=2))
+        return
     for iid, info in registry.items():
         state = info.get("state", "unknown")
         binary = info.get("binary", "?")
@@ -204,8 +217,13 @@ def cmd_list(args, config):
 def cmd_status(args, config):
     iid = _opt(args, 'id')
     if not iid:
-        cmd_list(args, config)
-        return
+        # Try resolving from -b hint or single active instance
+        resolved_id, resolved_info = resolve_instance(args, config)
+        if resolved_id:
+            iid = resolved_id
+        else:
+            cmd_list(args, config)
+            return
     registry = load_registry()
     info = registry.get(iid)
     if not info:
@@ -358,10 +376,10 @@ def cmd_proxy_decompile_batch(args, config):
     lines = [f"Total: {r['total']}, Success: {r['success']}, Failed: {r['failed']}"]
     for func in r.get("functions", []):
         if "code" in func:
-            lines.append(f"\n// ── {func['name']} ({func['addr']}) ──")
+            lines.append(f"\n// -- {func['name']} ({func['addr']}) --")
             lines.append(func["code"])
         else:
-            lines.append(f"\n// ── {func.get('addr', '?')} ── ERROR: {func.get('error', '?')}")
+            lines.append(f"\n// -- {func.get('addr', '?')} -- ERROR: {func.get('error', '?')}")
     output = "\n".join(lines)
     if not r.get("saved_to"):
         output, _ = _check_inline_limit(output, config)
@@ -1381,7 +1399,8 @@ def cmd_snapshot(args, config):
         print(f"  Snapshots ({r.get('total', 0)}):")
         for s in snapshots:
             size_mb = s.get("size", 0) / (1024 * 1024)
-            print(f"    {s['created']}  {size_mb:.1f}MB  {s['name']}")
+            desc = f"  \"{s['description']}\"" if s.get("description") else ""
+            print(f"    {s['created']}  {size_mb:.1f}MB  {s['name']}{desc}")
 
     elif action == "restore":
         filename = args.filename

@@ -983,29 +983,45 @@ def _handle_snapshot_save(params):
     except Exception as e:
         # Fallback: just save the IDB as a backup copy
         idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
-        import shutil, datetime
+        import shutil, datetime, json as _json
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup = f"{idb_path}.snapshot_{ts}"
         shutil.copy2(idb_path, backup)
+        # Save description metadata
+        meta = {"description": desc, "created": datetime.datetime.now().isoformat()}
+        with open(backup + ".meta.json", "w", encoding="utf-8") as mf:
+            _json.dump(meta, mf, ensure_ascii=False)
         return {"ok": True, "description": desc, "filename": backup, "method": "file_copy"}
 
 
 def _handle_snapshot_list(params):
     """List available snapshots."""
-    import ida_loader, glob as glob_mod, datetime
+    import ida_loader, glob as glob_mod, datetime, json as _json
     idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
-    # Find snapshot files
+    # Find snapshot files (exclude .meta.json)
     pattern = f"{idb_path}.snapshot_*"
     snapshots = []
     for f in sorted(glob_mod.glob(pattern)):
+        if f.endswith(".meta.json"):
+            continue
         name = os.path.basename(f)
         mtime = os.path.getmtime(f)
-        snapshots.append({
+        entry = {
             "filename": f,
             "name": name,
             "size": os.path.getsize(f),
             "created": datetime.datetime.fromtimestamp(mtime).isoformat(),
-        })
+        }
+        # Load description from metadata file
+        meta_path = f + ".meta.json"
+        if os.path.isfile(meta_path):
+            try:
+                with open(meta_path, encoding="utf-8") as mf:
+                    meta = _json.load(mf)
+                entry["description"] = meta.get("description", "")
+            except Exception:
+                pass
+        snapshots.append(entry)
     return {"total": len(snapshots), "snapshots": snapshots}
 
 
