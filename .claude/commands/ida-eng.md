@@ -44,6 +44,8 @@ ida-cli --init                            # Initialize directories
 ida-cli start <binary> --idb-dir .        # Start analysis (always use --idb-dir .)
   # Options: --fresh (ignore existing .i64), --force (allow duplicate instances)
 ida-cli stop <id>                         # Stop instance
+ida-cli restart <id>                      # Stop + re-start (same binary/IDB)
+  # Options: --fresh (reanalyze from scratch)
 ida-cli status                            # Status (auto-resolves -b hint)
 ida-cli wait <id> --timeout 300           # Wait for analysis completion
 ida-cli list                              # List all instances

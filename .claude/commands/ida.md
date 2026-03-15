@@ -44,6 +44,8 @@ ida-cli --init                            # 디렉토리 초기화
 ida-cli start <바이너리> --idb-dir .      # 분석 시작 (항상 --idb-dir . 사용)
   # 옵션: --fresh (기존 .i64 무시, 재분석), --force (동일 바이너리 중복 허용)
 ida-cli stop <id>                         # 인스턴스 종료
+ida-cli restart <id>                      # 종료 후 재시작 (같은 바이너리/IDB)
+  # 옵션: --fresh (처음부터 재분석)
 ida-cli status                            # 상태 확인 (-b 힌트 자동 resolve)
 ida-cli wait <id> --timeout 300           # 분석 완료 대기
 ida-cli list                              # 전체 인스턴스 목록
