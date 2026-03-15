@@ -647,6 +647,9 @@ def _cmd_proxy_list(args, config, method, header_fn, format_fn):
     r = _rpc_call(args, config, method, _list_params(args))
     if not r:
         return
+    if _opt(args, 'count_only', False):
+        print(f"Total: {r.get('total', len(r.get('data', [])))}")
+        return
     print(header_fn(r))
     for d in r.get("data", []):
         print(format_fn(d))

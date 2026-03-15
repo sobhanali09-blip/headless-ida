@@ -85,7 +85,7 @@ ida-cli -b <hint> decompile_batch <a1> <a2> --out batch.md  # Markdown output
 
 # Decompile all functions to file
 ida-cli -b <hint> decompile-all --out /tmp/all.c [--filter X]
-  # Options: --include-thunks, --include-libs
+  # Options: --include-thunks, --include-libs, --split (one file per function)
 
 # Disassembly
 ida-cli -b <hint> disasm <addr|name> --count 50
@@ -95,6 +95,8 @@ ida-cli -b <hint> disasm <addr|name> --count 50
 ```bash
 ida-cli -b <hint> find_func <name> [--regex]       # Find function by name/regex
 ida-cli -b <hint> func_info <addr|name>             # Function details (size, args, type)
+ida-cli -b <hint> stack-frame <addr|name>            # Stack frame layout (locals, args, offsets)
+ida-cli -b <hint> switch-table <addr|name>           # Analyze switch/jump tables
 ida-cli -b <hint> func-similarity <addrA> <addrB>   # Compare two functions by similarity
 ida-cli -b <hint> auto-rename [--apply] [--max-funcs 200]  # Heuristic rename sub_ functions
 ```
@@ -124,6 +126,8 @@ ida-cli -b <hint> basic-blocks <addr> --graph-only   # Graph output only
 ```bash
 ida-cli -b <hint> search-code "keyword" --max 10      # Search in decompiled pseudocode
   # Options: --max-funcs N (limit functions to scan)
+  # WARNING: Decompiles every function to search. Slow on large binaries (1000+ funcs).
+  #          Use --max-funcs to limit scope, or prefer strings-xrefs for string searches.
 ida-cli -b <hint> search-const 0x1234 --max 20         # Search constant/immediate values
 ida-cli -b <hint> find_pattern "48 8B ? ? 00" --max 20 # Byte pattern search
 ida-cli -b <hint> strings-xrefs --filter http --max 20  # Strings + referencing functions
@@ -165,6 +169,7 @@ ida-cli -b <hint> sigs apply <sig_name>
 ### Modification
 ```bash
 ida-cli -b <hint> rename <addr> <new_name>
+ida-cli -b <hint> rename-batch mapping.csv             # Batch rename from CSV (addr,name) or JSON
 ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
 ida-cli -b <hint> comment <addr> "description text"
 ida-cli -b <hint> patch <addr> 90 90 90               # NOP patch (requires exec_enabled)
@@ -211,9 +216,9 @@ ida-cli -b <hint> report output.md --functions 0x401000 0x402000  # Include deco
 ida-cli batch <directory> --idb-dir . --timeout 300
 
 # Automated analysis profiles
-ida-cli -b <hint> profile run malware
-ida-cli -b <hint> profile run vuln
-ida-cli -b <hint> profile run firmware
+ida-cli -b <hint> profile run malware    # C2, crypto, anti-analysis, network APIs
+ida-cli -b <hint> profile run vuln       # Dangerous functions (memcpy, strcpy, sprintf, system)
+ida-cli -b <hint> profile run firmware   # Peripherals (UART/SPI/GPIO), protocols, boot
 ```
 
 ### Binary Comparison (Patch Diffing)
@@ -249,6 +254,8 @@ ida-cli completions --shell bash|zsh|fish|powershell   # Generate shell completi
 - `--json` -- JSON output mode
 - `--fresh` -- Ignore existing .i64, reanalyze from scratch
 - `--force` -- Allow duplicate instances of same binary
+- `--count-only` -- Show only total count (for functions/strings/imports/exports)
+- `--version` -- Show CLI version
 
 ## Multi-Instance Workflow
 
@@ -350,6 +357,9 @@ ida-cli -b <hint> strings-xrefs --filter login --max 20
 # BAD: fetches all 2000 functions
 ida-cli -b <hint> functions
 
+# GOOD: just get the count first
+ida-cli -b <hint> functions --count-only
+
 # GOOD: paginate with --count and --offset
 ida-cli -b <hint> functions --count 30
 ida-cli -b <hint> functions --count 30 --offset 30  # next page
@@ -411,6 +421,32 @@ int __stdcall wWinMain(HINSTANCE hInstance, ...) {
 Xrefs TO 0x140010100 (3)
   0x14001A000  sub_14001A000                     Code_Near
   0x14001B200  __mainCRTStartup                  Code_Near
+```
+
+### func-similarity
+```
+  Function A: sub_140001000 (0x140001000)  size=256  blocks=12  callees=5
+  Function B: sub_140002000 (0x140002000)  size=280  blocks=14  callees=6
+
+  Similarity:
+    Size ratio:      0.9143
+    Block ratio:     0.8571
+    Callee Jaccard:  0.6000
+    Overall:         0.7905
+```
+(Overall 1.0 = identical, 0.0 = completely different)
+
+### stack-frame
+```
+  Function: process_data (0x140001000)
+  Frame size: 120  (locals=96, args=16, retaddr=8)
+  Members: 5
+
+  | Offset |   Size | Name                           | Type                 | Kind |
+  |     0  |     64 | buf                            | char[64]             | local|
+  |    64  |      8 | result                         | __int64              | local|
+  |    96  |      8 | return_addr                    |                      | retaddr|
+  |   104  |      8 | arg_0                          | void *               | arg  |
 ```
 
 ### callgraph (mermaid)
@@ -476,12 +512,23 @@ What are you analyzing?
 
 8. **Context flooding from large lists** — Never fetch all functions/strings at once. Use `--count 30` and `--offset` for pagination.
 
-## Error Handling
+## Error Handling & Troubleshooting
 
-- Analysis failure: `logs <id> --tail 20`
-- Locked/corrupted .i64 (`open_database returned 2`): delete .i64, restart with `--fresh`
-- Rebuild .i64: `start <binary> --fresh`
-- Instance issues: `list` then `cleanup`
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `open_database returned 2` | .i64 locked or corrupted | Delete .i64, restart with `--fresh` |
+| `CONNECTION_FAILED` | Server process crashed | Run `cleanup`, then `start` again |
+| `NOT_A_FUNCTION` | Address is not inside a function | Check the hint in error message for nearest functions |
+| `INVALID_ADDRESS` | Symbol name not found | Use `find_func --regex <name>` or `functions --filter <name>` |
+| `DECOMPILER_NOT_LOADED` | No Hex-Rays license | Use `disasm` instead of `decompile` |
+| `EXEC_DISABLED` | exec not enabled | Set `security.exec_enabled=true` in config.json |
+| `TIMEOUT` | Analysis taking too long | Increase `--timeout`, or check `logs <id>` for issues |
+| Instance shows "analyzing" | Initial auto-analysis running | Wait: `wait <id> --timeout 300` |
+
+### Quick Fixes
+- **Analysis failure**: `logs <id> --tail 20` to check what went wrong
+- **Stale instances**: `list` then `cleanup` to remove dead entries
+- **Rebuild .i64**: `start <binary> --fresh` (ignores existing database)
 
 ## Tool Selection
 

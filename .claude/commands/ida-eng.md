@@ -83,7 +83,7 @@ ida-cli -b <hint> decompile_batch <a1> <a2> --out batch.md  # Markdown output
 
 # Decompile all functions to file
 ida-cli -b <hint> decompile-all --out /tmp/all.c [--filter X]
-  # Options: --include-thunks, --include-libs
+  # Options: --include-thunks, --include-libs, --split (one file per function)
 
 # Disassembly
 ida-cli -b <hint> disasm <addr|name> --count 50
@@ -93,6 +93,8 @@ ida-cli -b <hint> disasm <addr|name> --count 50
 ```bash
 ida-cli -b <hint> find_func <name> [--regex]       # Find function by name/regex
 ida-cli -b <hint> func_info <addr|name>             # Function details (size, args, type)
+ida-cli -b <hint> stack-frame <addr|name>            # Stack frame layout (locals, args, offsets)
+ida-cli -b <hint> switch-table <addr|name>           # Analyze switch/jump tables
 ida-cli -b <hint> func-similarity <addrA> <addrB>   # Compare two functions by similarity
 ida-cli -b <hint> auto-rename [--apply] [--max-funcs 200]  # Heuristic rename sub_ functions
 ```
@@ -163,6 +165,7 @@ ida-cli -b <hint> sigs apply <sig_name>
 ### Modification
 ```bash
 ida-cli -b <hint> rename <addr> <new_name>
+ida-cli -b <hint> rename-batch mapping.csv             # Batch rename from CSV (addr,name) or JSON
 ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
 ida-cli -b <hint> comment <addr> "description text"
 ida-cli -b <hint> patch <addr> 90 90 90               # NOP patch (requires exec_enabled)

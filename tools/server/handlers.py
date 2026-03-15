@@ -387,6 +387,132 @@ def _extract_type_info(func_start_ea):
     return result
 
 
+def _handle_stack_frame(params):
+    """Get stack frame layout with local variables and arguments (IDA 9.x API)."""
+    import idc, ida_frame, ida_typeinf
+    ea = _resolve_addr(_require_param(params, "addr"))
+    func = _require_function(ea)
+
+    tif = ida_typeinf.tinfo_t()
+    if not ida_frame.get_func_frame(tif, func):
+        raise RpcError("NO_FRAME", f"No stack frame for function at {_fmt_addr(ea)}")
+
+    frame_size = ida_frame.get_frame_size(func)
+    retaddr_size = ida_frame.get_frame_retsize(func)
+    off_lvars = ida_frame.frame_off_lvars(func)
+    off_retaddr = ida_frame.frame_off_retaddr(func)
+    off_args = ida_frame.frame_off_args(func)
+    locals_size = off_retaddr - off_lvars
+    args_size = frame_size - off_args
+
+    udt = ida_typeinf.udt_type_data_t()
+    members = []
+    if tif.get_udt_details(udt):
+        for i in range(len(udt)):
+            m = udt[i]
+            off_bytes = m.offset // 8
+            size_bytes = max(1, m.size // 8)
+            mtype = str(m.type) if m.type else ""
+            if off_bytes < off_retaddr:
+                kind = "local"
+            elif off_bytes < off_args:
+                kind = "retaddr"
+            else:
+                kind = "arg"
+            sp_off = off_bytes - off_retaddr
+            members.append({
+                "name": m.name or f"var_{off_bytes:X}",
+                "offset": off_bytes, "size": size_bytes,
+                "type": mtype, "kind": kind, "sp_offset": sp_off,
+            })
+
+    return {
+        "addr": _fmt_addr(func.start_ea),
+        "name": idc.get_func_name(func.start_ea) or "",
+        "frame_size": frame_size,
+        "locals_size": locals_size,
+        "args_size": args_size,
+        "retaddr_size": retaddr_size,
+        "member_count": len(members),
+        "members": members,
+    }
+
+
+def _handle_switch_table(params):
+    """Analyze switch/jump table at address (IDA 9.x API)."""
+    import idc, ida_nalt, ida_bytes, idautils
+    ea = _resolve_addr(_require_param(params, "addr"))
+    func = _require_function(ea)
+
+    switches = []
+    for head in idautils.Heads(func.start_ea, func.end_ea):
+        si = ida_nalt.get_switch_info(head)
+        if not si:
+            continue
+        jt_size = si.get_jtable_size()
+        elem_size = si.get_jtable_element_size()
+        cases = []
+        for i in range(jt_size):
+            addr = si.jumps + i * elem_size
+            if elem_size == 4:
+                target_off = ida_bytes.get_dword(addr)
+            elif elem_size == 8:
+                target_off = ida_bytes.get_qword(addr)
+            elif elem_size == 2:
+                target_off = ida_bytes.get_word(addr)
+            else:
+                target_off = ida_bytes.get_dword(addr)
+            target = (si.elbase + target_off) if si.has_elbase() else target_off
+            cases.append({"index": i, "target": _fmt_addr(target)})
+        default_ea = si.defjump
+        bad = {0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0}
+        switches.append({
+            "addr": _fmt_addr(head),
+            "case_count": jt_size,
+            "default": _fmt_addr(default_ea) if default_ea not in bad else None,
+            "cases": cases,
+        })
+
+    if not switches:
+        raise RpcError("NO_SWITCH", f"No switch tables found in function at {_fmt_addr(func.start_ea)}")
+
+    return {
+        "addr": _fmt_addr(func.start_ea),
+        "name": idc.get_func_name(func.start_ea) or "",
+        "switch_count": len(switches),
+        "switches": switches,
+    }
+
+
+def _handle_rename_batch(params):
+    """Batch rename from list of addr/name pairs."""
+    import idc
+    entries = _require_param(params, "entries")
+    if not isinstance(entries, list):
+        raise RpcError("INVALID_PARAM", "entries must be a list of {addr, name} objects")
+    results = {"total": len(entries), "success": 0, "failed": 0, "renames": []}
+    for entry in entries:
+        addr_str = entry.get("addr")
+        name = entry.get("name")
+        if not addr_str or not name:
+            results["failed"] += 1
+            continue
+        try:
+            ea = _resolve_addr(addr_str)
+            ok = idc.set_name(ea, name, idc.SN_NOWARN | idc.SN_NOCHECK)
+            if ok:
+                results["success"] += 1
+                results["renames"].append({"addr": _fmt_addr(ea), "name": name, "ok": True})
+            else:
+                results["failed"] += 1
+                results["renames"].append({"addr": _fmt_addr(ea), "name": name, "ok": False})
+        except Exception:
+            results["failed"] += 1
+    if results["success"] > 0:
+        _maybe_save_db()
+    return results
+
+
 def _get_segments_info():
     """Collect segment information (reuses _handle_get_segments)."""
     return _handle_get_segments({}).get("data", [])
@@ -1569,12 +1695,26 @@ def _handle_decompile_all(params):
         except Exception:
             failed += 1
 
-    text = "\n\n".join(results)
-    _save_output(output_path, text)
+    split = params.get("split", False)
+    if split:
+        # Save each function to a separate file in output_path directory
+        os.makedirs(output_path, exist_ok=True)
+        for entry in results:
+            # Extract function name from comment header
+            match = re.match(r'// ── (\S+)', entry)
+            fname = match.group(1) if match else f"func_{results.index(entry)}"
+            safe_name = re.sub(r'[^\w\-.]', '_', fname)
+            fpath = os.path.join(output_path, f"{safe_name}.c")
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(entry)
+    else:
+        text = "\n\n".join(results)
+        _save_output(output_path, text)
     return {
         "total": success + failed + skipped, "success": success,
         "failed": failed, "skipped": skipped,
         "saved_to": output_path,
+        "split": split,
     }
 
 
@@ -1908,6 +2048,9 @@ _METHODS = {
     "func_similarity": _handle_func_similarity,
     "data_refs": _handle_data_refs,
     "basic_blocks": _handle_basic_blocks,
+    "stack_frame": _handle_stack_frame,
+    "switch_table": _handle_switch_table,
+    "rename_batch": _handle_rename_batch,
 }
 
 _METHOD_DESCRIPTIONS = [
@@ -1967,6 +2110,9 @@ _METHOD_DESCRIPTIONS = [
     ("func_similarity", "Compare two functions by similarity"),
     ("data_refs", "Data segment reference analysis"),
     ("basic_blocks", "Basic blocks and CFG for a function"),
+    ("stack_frame", "Get stack frame layout with local variables"),
+    ("switch_table", "Analyze switch/jump tables in a function"),
+    ("rename_batch", "Batch rename from list of addr/name pairs"),
 ]
 
 

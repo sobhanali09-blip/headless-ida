@@ -2,6 +2,8 @@
 
 import argparse
 
+_CLI_VERSION = "2.1.0"
+
 from shared import init_registry_paths
 
 from .core import (
@@ -27,6 +29,7 @@ from .commands import (
     cmd_basic_blocks,
     cmd_proxy_callers, cmd_proxy_callees,
     cmd_restart,
+    cmd_stack_frame, cmd_switch_table, cmd_rename_batch,
 )
 
 
@@ -94,6 +97,9 @@ def _build_dispatch(args, config, config_path):
         "callers": lambda: cmd_proxy_callers(args, config),
         "callees": lambda: cmd_proxy_callees(args, config),
         "restart": lambda: cmd_restart(args, config, config_path),
+        "stack-frame": lambda: cmd_stack_frame(args, config),
+        "switch-table": lambda: cmd_switch_table(args, config),
+        "rename-batch": lambda: cmd_rename_batch(args, config),
     }
     for cmd_name, (method, header_fn, format_fn) in _LIST_COMMANDS.items():
         d[cmd_name] = (lambda m=method, h=header_fn, f=format_fn:
@@ -114,6 +120,7 @@ def _build_parser():
     common.add_argument("-b", dest="binary_hint", default=None, help="Binary name hint")
 
     parser = argparse.ArgumentParser(description="IDA Headless CLI", prog="ida_cli.py", parents=[common])
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_CLI_VERSION}")
     parser.add_argument("--init", action="store_true", help="Initialize directories")
     parser.add_argument("--check", action="store_true", help="Check environment")
 
@@ -158,6 +165,7 @@ def _build_parser():
         p.add_argument("--count", type=int, default=None)
         p.add_argument("--filter", default=None)
         p.add_argument("--out", default=None)
+        p.add_argument("--count-only", action="store_true", help="Show only the total count")
         if name == "strings":
             p.add_argument("--encoding", choices=["unicode", "ascii"], default=None,
                            help="Filter by string encoding")
@@ -370,10 +378,11 @@ def _build_parser():
     p.add_argument("--out", default=None)
 
     p = sub.add_parser("decompile-all", help="Decompile all functions to .c file", parents=[common])
-    p.add_argument("--out", required=True, help="Output .c file path")
+    p.add_argument("--out", required=True, help="Output .c file path (or directory with --split)")
     p.add_argument("--filter", default=None, help="Filter by function name")
     p.add_argument("--include-thunks", action="store_true")
     p.add_argument("--include-libs", action="store_true")
+    p.add_argument("--split", action="store_true", help="Save each function to a separate .c file")
 
     ti = sub.add_parser("type-info", help="Query local types", parents=[common])
     ti_sub = ti.add_subparsers(dest="action")
@@ -406,6 +415,15 @@ def _build_parser():
     p.add_argument("--format", choices=["mermaid", "dot"], default="mermaid")
     p.add_argument("--graph-only", action="store_true", help="Only output graph")
     p.add_argument("--out", default=None)
+
+    p = sub.add_parser("stack-frame", help="Show stack frame layout", parents=[common])
+    p.add_argument("addr", help="Function address or name")
+
+    p = sub.add_parser("switch-table", help="Analyze switch/jump tables", parents=[common])
+    p.add_argument("addr", help="Function address or name")
+
+    p = sub.add_parser("rename-batch", help="Batch rename from CSV/JSON file", parents=[common])
+    p.add_argument("input_file", help="CSV (addr,name) or JSON file")
 
     sub.add_parser("update", help="Self-update from git")
 

@@ -172,7 +172,8 @@ def save_db():
 def _require_decompiler():
     """Raise if decompiler is not available."""
     if not _decompiler_available:
-        raise RpcError("DECOMPILER_NOT_LOADED", "Decompiler plugin not available")
+        raise RpcError("DECOMPILER_NOT_LOADED", "Decompiler plugin not available",
+                        suggestion="Ensure Hex-Rays decompiler license is installed. Use 'disasm' for assembly output instead.")
 
 
 def _maybe_save_db():
@@ -200,11 +201,30 @@ def _bytes_to_hex(raw):
 
 
 def _require_function(ea):
-    """Get ida_funcs.get_func(ea) or raise NOT_A_FUNCTION."""
-    import ida_funcs
+    """Get ida_funcs.get_func(ea) or raise NOT_A_FUNCTION with nearest suggestion."""
+    import ida_funcs, idc, idaapi
     func = ida_funcs.get_func(ea)
     if not func:
-        raise RpcError("NOT_A_FUNCTION", f"No function at {_fmt_addr(ea)}")
+        suggestion = "Use 'find_func' or 'functions' to find valid function addresses"
+        hints = []
+        try:
+            prev = ida_funcs.get_prev_func(ea)
+            if prev != idaapi.BADADDR:
+                name = idc.get_func_name(prev) or ""
+                hints.append(f"{_fmt_addr(prev)} {name}")
+        except Exception:
+            pass
+        try:
+            nxt = ida_funcs.get_next_func(ea)
+            if nxt != idaapi.BADADDR:
+                name = idc.get_func_name(nxt) or ""
+                hints.append(f"{_fmt_addr(nxt)} {name}")
+        except Exception:
+            pass
+        if hints:
+            suggestion = f"Nearest functions: {'; '.join(hints)}"
+        raise RpcError("NOT_A_FUNCTION", f"No function at {_fmt_addr(ea)}",
+                        suggestion=suggestion)
     return func
 
 
@@ -243,7 +263,8 @@ def _resolve_addr(addr_str):
         pass
     ea = idc.get_name_ea_simple(addr_str)
     if ea == idc.BADADDR:
-        raise RpcError("INVALID_ADDRESS", f"Cannot resolve: {addr_str}")
+        raise RpcError("INVALID_ADDRESS", f"Cannot resolve: {addr_str}",
+                        suggestion=f"Use 'find_func --regex {addr_str}' or 'functions --filter {addr_str}' to search")
     return ea
 
 

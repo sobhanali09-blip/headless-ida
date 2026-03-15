@@ -1863,6 +1863,7 @@ def cmd_completions(args):
         "export-script", "vtables", "sigs", "cross-refs",
         "decompile-all", "type-info", "strings-xrefs",
         "func-similarity", "data-refs", "basic-blocks",
+        "stack-frame", "switch-table", "rename-batch",
         "update", "completions",
     ]
     if shell == "bash":
@@ -1947,15 +1948,19 @@ def cmd_cross_refs(args, config):
 def cmd_decompile_all(args, config):
     """Decompile all functions to .c file."""
     out_path = args.out
+    split = _opt(args, 'split', False)
     p = {"output": out_path, "filter": _opt(args, 'filter', ''),
          "skip_thunks": not _opt(args, 'include_thunks', False),
          "skip_libs": not _opt(args, 'include_libs', False)}
+    if split:
+        p["split"] = True
     r = _rpc_call(args, config, "decompile_all", p)
     if not r:
         return
     print(f"  Decompiled: {r.get('success', 0)}/{r.get('total', 0)} functions")
     print(f"  Failed: {r.get('failed', 0)}, Skipped: {r.get('skipped', 0)}")
-    print(f"  Saved to: {r.get('saved_to', '')}")
+    mode = "directory" if r.get("split") else "file"
+    print(f"  Saved to ({mode}): {r.get('saved_to', '')}")
 
 
 # ─────────────────────────────────────────────
@@ -2115,3 +2120,90 @@ def cmd_basic_blocks(args, config):
     else:
         print()
         print(content)
+
+
+# ─────────────────────────────────────────────
+# Stack Frame
+# ─────────────────────────────────────────────
+
+def cmd_stack_frame(args, config):
+    """Show stack frame layout with local variables."""
+    r = _rpc_call(args, config, "stack_frame", {"addr": args.addr})
+    if not r:
+        return
+    print(f"  Function: {r.get('name', '')} ({r.get('addr', '')})")
+    print(f"  Frame size: {r.get('frame_size', 0)}  (locals={r.get('locals_size', 0)}, "
+          f"args={r.get('args_size', 0)}, retaddr={r.get('retaddr_size', 0)})")
+    print(f"  Members: {r.get('member_count', 0)}")
+    if r.get("members"):
+        print()
+        print("  | {:>6} | {:>6} | {:<30} | {:<20} | {} |".format(
+            "Offset", "Size", "Name", "Type", "Kind"))
+        print("  |--------|--------|" + "-" * 32 + "|" + "-" * 22 + "|------|")
+        for m in r["members"]:
+            print("  | {:>6} | {:>6} | {:<30} | {:<20} | {:<4} |".format(
+                m["offset"], m["size"], m["name"],
+                _truncate(m.get("type", ""), 20), m["kind"]))
+
+
+# ─────────────────────────────────────────────
+# Switch Table
+# ─────────────────────────────────────────────
+
+def cmd_switch_table(args, config):
+    """Analyze switch/jump tables in a function."""
+    r = _rpc_call(args, config, "switch_table", {"addr": args.addr})
+    if not r:
+        return
+    print(f"  Function: {r.get('name', '')} ({r.get('addr', '')})")
+    print(f"  Switch tables: {r.get('switch_count', 0)}")
+    for sw in r.get("switches", []):
+        default = sw.get("default") or "none"
+        print(f"\n    Switch @ {sw['addr']}  ({sw['case_count']} cases, default={default})")
+        for case in sw.get("cases", []):
+            vals = ", ".join(str(v) for v in case.get("values", []))
+            print(f"      case {vals}: -> {case['target']}")
+
+
+# ─────────────────────────────────────────────
+# Rename Batch
+# ─────────────────────────────────────────────
+
+def cmd_rename_batch(args, config):
+    """Batch rename from CSV/JSON file."""
+    input_file = args.input_file
+    if not os.path.isfile(input_file):
+        _log_err(f"File not found: {input_file}")
+        return
+
+    entries = []
+    if input_file.endswith(".json"):
+        with open(input_file, encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                entries = data
+            elif isinstance(data, dict):
+                entries = [{"addr": k, "name": v} for k, v in data.items()]
+    else:
+        # CSV format: addr,name (one per line)
+        with open(input_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split(",", 1)
+                if len(parts) == 2:
+                    entries.append({"addr": parts[0].strip(), "name": parts[1].strip()})
+
+    if not entries:
+        _log_err("No rename entries found in file")
+        return
+
+    _log_info(f"Renaming {len(entries)} symbols...")
+    r = _rpc_call(args, config, "rename_batch", {"entries": entries})
+    if not r:
+        return
+    print(f"  Total: {r.get('total', 0)}, Success: {r.get('success', 0)}, Failed: {r.get('failed', 0)}")
+    for entry in r.get("renames", [])[:30]:
+        status = "OK" if entry.get("ok") else "FAIL"
+        print(f"    [{status}] {entry['addr']}  {entry['name']}")
