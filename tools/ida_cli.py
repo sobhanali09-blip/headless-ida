@@ -741,8 +741,8 @@ def cmd_proxy_segments(args, config):
     r = _rpc_call(args, config, "get_segments", p)
     if not r: return
     for d in r.get("data", []):
-        print(f"  {d['start_addr']}-{d['end_addr']}  {d.get('name', ''):<12}  "
-              f"{d.get('class', ''):<8}  size={d.get('size', 0):<8}  {d.get('perm', '')}")
+        print(f"  {d['start_addr']}-{d['end_addr']}  {d.get('name') or '':<12}  "
+              f"{d.get('class') or '':<8}  size={d.get('size') or 0:<8}  {d.get('perm') or ''}")
 
 
 def cmd_proxy_decompile(args, config):

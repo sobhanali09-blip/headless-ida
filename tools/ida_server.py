@@ -866,11 +866,13 @@ def _load_decompiler():
 
     # IDA 9.x: unified plugins — no separate 32/64-bit variants
     _PLFM_MAP = {
-        ida_idp.PLFM_386:   "hexx64",
-        ida_idp.PLFM_ARM:   "hexarm",
-        ida_idp.PLFM_PPC:   "hexppc",
-        ida_idp.PLFM_MIPS:  "hexmips",
-        ida_idp.PLFM_RISCV: "hexrv",
+        ida_idp.PLFM_386:       "hexx64",
+        ida_idp.PLFM_ARM:       "hexarm",
+        ida_idp.PLFM_PPC:       "hexppc",
+        ida_idp.PLFM_MIPS:      "hexmips",
+        ida_idp.PLFM_RISCV:     "hexrv",
+        ida_idp.PLFM_NEC_V850X: "hexv850",
+        ida_idp.PLFM_ARC:       "hexarc",
     }
 
     cpu_id = ida_idp.ph.id
