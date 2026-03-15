@@ -657,7 +657,7 @@ def _find_binaries(target_dir):
             try:
                 with open(fpath, "rb") as fp:
                     magic = fp.read(4)
-                if magic in (b"\x7fELF", b"MZ") or magic[:2] == b"MZ":
+                if magic[:4] == b"\x7fELF" or magic[:2] == b"MZ":
                     binaries.append(fpath)
             except Exception:
                 pass
@@ -1057,7 +1057,7 @@ _REPORT_DATA_TABLES = [
      lambda d: f"| `{d['addr']}` | {d['name']} |"),
     ("Strings", "get_strings", 50,
      ("Address", "Value"),
-     lambda d: f"| `{d['addr']}` | {d.get('value', '').replace('|', chr(92)+'|')} |"),
+     lambda d: f"| `{d['addr']}` | {d.get('value', '').replace('|', '\\|')} |"),
 ]
 
 

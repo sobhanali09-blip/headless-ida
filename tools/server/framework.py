@@ -184,7 +184,7 @@ def _maybe_save_db():
 def _require_param(params, key, msg=None):
     """Get a required parameter or raise."""
     val = params.get(key)
-    if not val:
+    if val is None:
         raise RpcError("INVALID_PARAMS", msg or f"{key} parameter required")
     return val
 

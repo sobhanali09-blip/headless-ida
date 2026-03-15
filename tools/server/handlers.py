@@ -515,7 +515,7 @@ def _handle_find_bytes(params):
         if ea is None or ea == idaapi.BADADDR:
             break
         matches.append(_fmt_addr(ea))
-        ea += 1
+        ea += max(1, len(pattern.split()) if isinstance(pattern, str) else 1)
     return {"pattern": pattern, "total": len(matches), "matches": matches}
 
 
@@ -668,7 +668,7 @@ def _import_types(data, stats):
             tif, ok = _parse_type_str(entry["type"])
             if ok:
                 ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE)
-            stats["types"] += 1
+                stats["types"] += 1
         except Exception:
             stats["errors"] += 1
 
@@ -838,7 +838,7 @@ def _handle_search_const(params):
                         func = ida_funcs.get_func(ea)
                         results.append({
                             "addr": _fmt_addr(ea),
-                            "func": idc.get_func_name(ea) or "" if func else "",
+                            "func": (idc.get_func_name(ea) or "") if func else "",
                             "disasm": idc.GetDisasm(ea),
                         })
                         break
