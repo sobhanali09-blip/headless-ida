@@ -8,27 +8,27 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Agent, TodoWrite
 Follow this workflow when a binary analysis is requested.
 
 ## Entry Point
-All IDA operations are performed exclusively via `python tools/ida_cli.py`.
+All IDA operations are performed via the `ida-cli` command (global PATH command).
+You can also use `python tools/ida_cli.py` when running from the project directory.
 Do not use MCP or other tools.
 
 ## Workflow
 
 ### 1. Environment Check (first time only)
 ```bash
-python tools/ida_cli.py --check
-python tools/ida_cli.py --init
+ida-cli --check
+ida-cli --init
 ```
 
 ### 2. Start Instance
 ```bash
-python tools/ida_cli.py start <binary_path>
-# To save IDB locally in the project:
-python tools/ida_cli.py start <binary_path> --idb-dir <project_directory>
+# Save IDB in current project folder (recommended)
+ida-cli start <binary_path> --idb-dir .
 # Note the instance_id from the output
-python tools/ida_cli.py wait <id> --timeout 300
+ida-cli wait <id> --timeout 300
 ```
+- **Always use `--idb-dir .` to save IDB files in the current project directory**
 - If an .i64 already exists, it is automatically reused (completes in seconds)
-- Use `--idb-dir` to specify a per-project IDB storage path
 - Use `--fresh` to ignore existing .i64 and reanalyze from scratch
 - Use `--force` to allow duplicate instances of the same binary
 - You can do other work while waiting for analysis
@@ -37,18 +37,18 @@ python tools/ida_cli.py wait <id> --timeout 300
 Survey the binary in this order:
 ```bash
 # Basic info
-python tools/ida_cli.py -b <hint> status
-python tools/ida_cli.py -b <hint> imagebase
-python tools/ida_cli.py -b <hint> segments
+ida-cli -b <hint> status
+ida-cli -b <hint> imagebase
+ida-cli -b <hint> segments
 
 # Data collection (use --out to save context window space)
-python tools/ida_cli.py -b <hint> strings --count 50 --out /tmp/strings.txt
-python tools/ida_cli.py -b <hint> imports --count 50 --out /tmp/imports.txt
-python tools/ida_cli.py -b <hint> exports --out /tmp/exports.txt
-python tools/ida_cli.py -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
+ida-cli -b <hint> strings --count 50 --out /tmp/strings.txt
+ida-cli -b <hint> imports --count 50 --out /tmp/imports.txt
+ida-cli -b <hint> exports --out /tmp/exports.txt
+ida-cli -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
 
 # Pagination for large function lists
-python tools/ida_cli.py -b <hint> functions --offset 100 --count 100
+ida-cli -b <hint> functions --offset 100 --count 100
 ```
 - Use `status` first to check decompiler availability and function count
 - Use `-b <hint>` to auto-select an instance by binary name substring
@@ -56,42 +56,42 @@ python tools/ida_cli.py -b <hint> functions --offset 100 --count 100
 ### 4. Deep Analysis
 ```bash
 # Find function
-python tools/ida_cli.py -b <hint> find_func <name> [--regex]
+ida-cli -b <hint> find_func <name> [--regex]
 
 # Decompile
-python tools/ida_cli.py -b <hint> decompile <addr|name> [--out /tmp/func.c]
+ida-cli -b <hint> decompile <addr|name> [--out /tmp/func.c]
 
 # Batch decompile
-python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
+ida-cli -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
 
 # Disassembly
-python tools/ida_cli.py -b <hint> disasm <addr|name> --count 50
+ida-cli -b <hint> disasm <addr|name> --count 50
 
 # Function details
-python tools/ida_cli.py -b <hint> func_info <addr|name>
+ida-cli -b <hint> func_info <addr|name>
 
 # Cross-references
-python tools/ida_cli.py -b <hint> xrefs <addr> --direction both
+ida-cli -b <hint> xrefs <addr> --direction both
 
 # Read bytes
-python tools/ida_cli.py -b <hint> bytes <addr> <size>
+ida-cli -b <hint> bytes <addr> <size>
 
 # Byte pattern search
-python tools/ida_cli.py -b <hint> find_pattern "48 8B ? ? 00" --max 20
+ida-cli -b <hint> find_pattern "48 8B ? ? 00" --max 20
 
 # Get comments
-python tools/ida_cli.py -b <hint> comments <addr>
+ida-cli -b <hint> comments <addr>
 
 # List available RPC methods
-python tools/ida_cli.py -b <hint> methods
+ida-cli -b <hint> methods
 ```
 
 ### 5. Modification & Iterative Analysis
 ```bash
-python tools/ida_cli.py -b <hint> rename <addr> <new_name>
-python tools/ida_cli.py -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
-python tools/ida_cli.py -b <hint> comment <addr> "description text"
-python tools/ida_cli.py -b <hint> save
+ida-cli -b <hint> rename <addr> <new_name>
+ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
+ida-cli -b <hint> comment <addr> "description text"
+ida-cli -b <hint> save
 ```
 > **Iterative analysis pattern**: After applying rename/set_type, decompile again —
 > variable names and types will be reflected, producing much more readable code.
@@ -99,7 +99,7 @@ python tools/ida_cli.py -b <hint> save
 
 ### 6. Shutdown
 ```bash
-python tools/ida_cli.py stop <id>
+ida-cli stop <id>
 ```
 
 ## Multi-Instance Workflow
@@ -107,15 +107,15 @@ python tools/ida_cli.py stop <id>
 When analyzing a main binary and its libraries simultaneously:
 ```bash
 # Start both binaries
-python tools/ida_cli.py start ./main_binary
-python tools/ida_cli.py start ./libcrypto.so
+ida-cli start ./main_binary --idb-dir .
+ida-cli start ./libcrypto.so --idb-dir .
 
 # Use -b hint to target each instance
-python tools/ida_cli.py -b main decompile 0x401000
-python tools/ida_cli.py -b crypto decompile 0x12340
+ida-cli -b main decompile 0x401000
+ida-cli -b crypto decompile 0x12340
 
 # Check instance list
-python tools/ida_cli.py list
+ida-cli list
 ```
 
 ## Analysis Strategies
@@ -162,11 +162,11 @@ The fastest way to reach target code:
 - Use `--json` mode for structured data
 
 ## Error Handling
-- Analysis failure: `python tools/ida_cli.py logs <id> --tail 20`
+- Analysis failure: `ida-cli logs <id> --tail 20`
 - Locked/corrupted .i64 (`open_database returned 2`): delete the .i64 file, then restart with `--fresh`
-- Rebuild .i64: `python tools/ida_cli.py start <binary> --fresh`
-- Instance list: `python tools/ida_cli.py list`
-- Cleanup: `python tools/ida_cli.py cleanup`
+- Rebuild .i64: `ida-cli start <binary> --fresh`
+- Instance list: `ida-cli list`
+- Cleanup: `ida-cli cleanup`
 
 ## Decision Criteria: IDA vs Other Tools
 - Java/Kotlin code → JADX

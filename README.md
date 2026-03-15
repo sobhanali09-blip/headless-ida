@@ -105,17 +105,32 @@ Edit `tools/config.json` to set IDA path and other options:
 
 > **Note**: `%USERPROFILE%` is automatically mapped to `$HOME` on Linux/macOS. On Linux/macOS, set `install_dir` to your IDA path (e.g., `/opt/ida-9.3`).
 
-#### Step 6. Test it works
+#### Step 6. Global CLI (optional, recommended)
+
+Add `bin/` to your system PATH so you can run `ida-cli` from any directory:
+
+```bash
+# Windows (PowerShell, permanent)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";<headless-ida>\bin", "User")
+
+# Linux/macOS
+echo 'export PATH="$PATH:<headless-ida>/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+After this, you can use `ida-cli` instead of `python tools/ida_cli.py` from any directory.
+
+#### Step 7. Test it works
 
 ```bash
 # Start an instance with any binary
-python tools/ida_cli.py start ./samples/target.exe
+ida-cli start ./samples/target.exe --idb-dir .
 
 # Check status
-python tools/ida_cli.py list
+ida-cli list
 
 # Stop
-python tools/ida_cli.py stop <id>
+ida-cli stop <id>
 ```
 
 If you see `Instance started: id=xxxx` and the instance appears in `list`, the setup is complete.
@@ -326,17 +341,32 @@ python tools/ida_cli.py --init
 
 > **참고**: `%USERPROFILE%`은 Linux/macOS에서 자동으로 `$HOME`으로 매핑됩니다. Linux/macOS에서는 `install_dir`을 IDA 경로로 설정하세요 (예: `/opt/ida-9.3`).
 
-#### Step 6. 동작 테스트
+#### Step 6. 글로벌 CLI (선택, 권장)
+
+`bin/` 디렉토리를 시스템 PATH에 추가하면 어디서든 `ida-cli` 명령어로 실행 가능:
 
 ```bash
-# 아무 바이너리로 인스턴스 시작
-python tools/ida_cli.py start ./samples/target.exe
+# Windows (PowerShell, 영구 설정)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";<headless-ida>\bin", "User")
+
+# Linux/macOS
+echo 'export PATH="$PATH:<headless-ida>/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+설정 후 `python tools/ida_cli.py` 대신 `ida-cli`로 어디서든 실행 가능합니다.
+
+#### Step 7. 동작 테스트
+
+```bash
+# 아무 바이너리로 인스턴스 시작 (IDB를 현재 폴더에 저장)
+ida-cli start ./samples/target.exe --idb-dir .
 
 # 상태 확인
-python tools/ida_cli.py list
+ida-cli list
 
 # 종료
-python tools/ida_cli.py stop <id>
+ida-cli stop <id>
 ```
 
 `Instance started: id=xxxx`가 출력되고 `list`에 나타나면 환경 구축 완료.

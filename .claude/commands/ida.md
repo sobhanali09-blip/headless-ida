@@ -8,27 +8,27 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Agent, TodoWrite
 바이너리 분석 요청 시 이 워크플로우를 따르세요.
 
 ## 진입점
-모든 IDA 작업은 `python tools/ida_cli.py` 명령어로만 수행합니다.
+모든 IDA 작업은 `ida-cli` 명령어로 수행합니다. (PATH에 등록된 글로벌 명령어)
+프로젝트 디렉토리에서는 `python tools/ida_cli.py`로도 실행 가능합니다.
 MCP나 다른 도구를 사용하지 않습니다.
 
 ## 워크플로우
 
 ### 1. 환경 확인 (최초 1회)
 ```bash
-python tools/ida_cli.py --check
-python tools/ida_cli.py --init
+ida-cli --check
+ida-cli --init
 ```
 
 ### 2. 인스턴스 시작
 ```bash
-python tools/ida_cli.py start <바이너리_경로>
-# 프로젝트 로컬에 IDB 저장 시:
-python tools/ida_cli.py start <바이너리_경로> --idb-dir <프로젝트_디렉토리>
+# IDB를 현재 프로젝트 폴더에 저장 (권장)
+ida-cli start <바이너리_경로> --idb-dir .
 # 출력에서 instance_id 확인
-python tools/ida_cli.py wait <id> --timeout 300
+ida-cli wait <id> --timeout 300
 ```
+- **항상 `--idb-dir .`를 사용하여 현재 프로젝트 디렉토리에 IDB 저장**
 - .i64가 이미 있으면 자동 재사용 (수 초 완료)
-- `--idb-dir`로 IDB 저장 경로를 프로젝트별로 지정 가능
 - `--fresh`로 기존 .i64 무시하고 처음부터 분석
 - `--force`로 동일 바이너리 중복 인스턴스 허용
 - 분석 대기 중 다른 작업 가능
@@ -37,18 +37,18 @@ python tools/ida_cli.py wait <id> --timeout 300
 아래 순서로 바이너리 개요를 파악합니다:
 ```bash
 # 기본 정보
-python tools/ida_cli.py -b <hint> status
-python tools/ida_cli.py -b <hint> imagebase
-python tools/ida_cli.py -b <hint> segments
+ida-cli -b <hint> status
+ida-cli -b <hint> imagebase
+ida-cli -b <hint> segments
 
 # 데이터 수집 (--out으로 컨텍스트 절약)
-python tools/ida_cli.py -b <hint> strings --count 50 --out /tmp/strings.txt
-python tools/ida_cli.py -b <hint> imports --count 50 --out /tmp/imports.txt
-python tools/ida_cli.py -b <hint> exports --out /tmp/exports.txt
-python tools/ida_cli.py -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
+ida-cli -b <hint> strings --count 50 --out /tmp/strings.txt
+ida-cli -b <hint> imports --count 50 --out /tmp/imports.txt
+ida-cli -b <hint> exports --out /tmp/exports.txt
+ida-cli -b <hint> functions --filter <keyword> --out /tmp/funcs.txt
 
 # 함수가 많을 때 페이징
-python tools/ida_cli.py -b <hint> functions --offset 100 --count 100
+ida-cli -b <hint> functions --offset 100 --count 100
 ```
 - `status`로 디컴파일러 사용 가능 여부, 함수 개수 먼저 확인
 - `-b <hint>`로 바이너리 이름 일부만으로 인스턴스 자동 선택
@@ -56,49 +56,49 @@ python tools/ida_cli.py -b <hint> functions --offset 100 --count 100
 ### 4. 심층 분석
 ```bash
 # 함수 찾기
-python tools/ida_cli.py -b <hint> find_func <이름> [--regex]
+ida-cli -b <hint> find_func <이름> [--regex]
 
 # 디컴파일
-python tools/ida_cli.py -b <hint> decompile <주소|이름> [--out /tmp/func.c]
+ida-cli -b <hint> decompile <주소|이름> [--out /tmp/func.c]
 
 # 일괄 디컴파일
-python tools/ida_cli.py -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
+ida-cli -b <hint> decompile_batch <addr1> <addr2> ... [--out /tmp/batch.c]
 
 # 디스어셈블리
-python tools/ida_cli.py -b <hint> disasm <주소|이름> --count 50
+ida-cli -b <hint> disasm <주소|이름> --count 50
 
 # 함수 상세 정보
-python tools/ida_cli.py -b <hint> func_info <주소|이름>
+ida-cli -b <hint> func_info <주소|이름>
 
 # 크로스 레퍼런스
-python tools/ida_cli.py -b <hint> xrefs <주소> --direction both
+ida-cli -b <hint> xrefs <주소> --direction both
 
 # 바이트 읽기
-python tools/ida_cli.py -b <hint> bytes <주소> <크기>
+ida-cli -b <hint> bytes <주소> <크기>
 
 # 바이트 패턴 검색
-python tools/ida_cli.py -b <hint> find_pattern "48 8B ? ? 00" --max 20
+ida-cli -b <hint> find_pattern "48 8B ? ? 00" --max 20
 
 # 주석 조회
-python tools/ida_cli.py -b <hint> comments <주소>
+ida-cli -b <hint> comments <주소>
 
 # 사용 가능한 RPC 메서드 목록
-python tools/ida_cli.py -b <hint> methods
+ida-cli -b <hint> methods
 ```
 
 ### 5. 수정 & 반복 분석
 ```bash
-python tools/ida_cli.py -b <hint> rename <주소> <새이름>
-python tools/ida_cli.py -b <hint> set_type <주소> "int __fastcall func(int a, int b)"
-python tools/ida_cli.py -b <hint> comment <주소> "설명 텍스트"
-python tools/ida_cli.py -b <hint> save
+ida-cli -b <hint> rename <주소> <새이름>
+ida-cli -b <hint> set_type <주소> "int __fastcall func(int a, int b)"
+ida-cli -b <hint> comment <주소> "설명 텍스트"
+ida-cli -b <hint> save
 ```
 > **반복 분석 패턴**: rename/set_type 적용 후 다시 decompile하면 변수명과 타입이
 > 반영되어 훨씬 읽기 쉬운 코드가 됩니다. 핵심 함수는 이 과정을 반복하세요.
 
 ### 6. 종료
 ```bash
-python tools/ida_cli.py stop <id>
+ida-cli stop <id>
 ```
 
 ## 멀티 인스턴스 워크플로우
@@ -106,15 +106,15 @@ python tools/ida_cli.py stop <id>
 메인 바이너리와 라이브러리를 동시에 분석할 때:
 ```bash
 # 두 바이너리를 각각 시작
-python tools/ida_cli.py start ./main_binary
-python tools/ida_cli.py start ./libcrypto.so
+ida-cli start ./main_binary --idb-dir .
+ida-cli start ./libcrypto.so --idb-dir .
 
 # -b 힌트로 각각 지정하여 분석
-python tools/ida_cli.py -b main decompile 0x401000
-python tools/ida_cli.py -b crypto decompile 0x12340
+ida-cli -b main decompile 0x401000
+ida-cli -b crypto decompile 0x12340
 
 # 인스턴스 목록 확인
-python tools/ida_cli.py list
+ida-cli list
 ```
 
 ## 분석 전략
@@ -161,11 +161,11 @@ python tools/ida_cli.py list
 - `--json` 모드로 구조화된 데이터 활용
 
 ## 에러 대응
-- 분석 실패 시: `python tools/ida_cli.py logs <id> --tail 20`
+- 분석 실패 시: `ida-cli logs <id> --tail 20`
 - .i64 손상/잠김 시 (`open_database returned 2`): 기존 .i64 삭제 후 `--fresh`로 재시작
-- .i64 재생성: `python tools/ida_cli.py start <binary> --fresh`
-- 인스턴스 목록: `python tools/ida_cli.py list`
-- 정리: `python tools/ida_cli.py cleanup`
+- .i64 재생성: `ida-cli start <binary> --fresh`
+- 인스턴스 목록: `ida-cli list`
+- 정리: `ida-cli cleanup`
 
 ## 판단 기준: IDA vs 다른 도구
 - Java/Kotlin 코드 → JADX

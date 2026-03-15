@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# ida-cli — Global wrapper for ida_cli.py (Linux/macOS)
+# Add this directory to PATH, then use: ida-cli start ./target.so
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec python3 "$SCRIPT_DIR/../tools/ida_cli.py" "$@"
