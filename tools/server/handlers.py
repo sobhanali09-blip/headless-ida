@@ -1437,6 +1437,378 @@ def _handle_exec(params):
 
 
 # ─────────────────────────────────────────────
+# Cross-refs (multi-level xref chain)
+# ─────────────────────────────────────────────
+
+def _handle_cross_refs(params):
+    """Trace xref chains N levels deep from an address."""
+    import idautils, idc, ida_funcs
+    ea = _resolve_addr(params.get("addr"))
+    depth = _clamp_int(params, "depth", 3, 10)
+    direction = params.get("direction", "to")
+
+    nodes = {}
+    edges = []
+
+    def _walk(cur_ea, cur_depth, dir_):
+        addr_str = _fmt_addr(cur_ea)
+        if addr_str in nodes:
+            return
+        name = idc.get_func_name(cur_ea) or idc.get_name(cur_ea) or addr_str
+        nodes[addr_str] = {"name": name, "level": cur_depth}
+        if cur_depth >= depth:
+            return
+        if dir_ in ("to", "both"):
+            for xref in idautils.XrefsTo(cur_ea):
+                src = _fmt_addr(xref.frm)
+                edges.append((src, addr_str, _xref_type_str(xref.type)))
+                func = ida_funcs.get_func(xref.frm)
+                target = func.start_ea if func else xref.frm
+                _walk(target, cur_depth + 1, dir_)
+        if dir_ in ("from", "both"):
+            for xref in idautils.XrefsFrom(cur_ea):
+                dst = _fmt_addr(xref.to)
+                edges.append((addr_str, dst, _xref_type_str(xref.type)))
+                func = ida_funcs.get_func(xref.to)
+                target = func.start_ea if func else xref.to
+                _walk(target, cur_depth + 1, dir_)
+
+    _walk(ea, 0, direction)
+    graph_nodes = {a: info["name"] for a, info in nodes.items()}
+    graph_edges = [(src, dst) for src, dst, _ in edges]
+    mermaid = _generate_mermaid_graph(graph_nodes, graph_edges)
+    dot = _generate_dot_graph(graph_nodes, graph_edges, _fmt_addr(ea))
+    chain = [{"addr": a, "name": info["name"], "level": info["level"]}
+             for a, info in sorted(nodes.items(), key=lambda x: x[1]["level"])]
+    saved_to = _save_output(params.get("output"), mermaid)
+    return {
+        "root": _fmt_addr(ea), "depth": depth, "direction": direction,
+        "nodes": len(nodes), "edges": len(edges),
+        "chain": chain,
+        "edge_details": [{"from": s, "to": d, "type": t} for s, d, t in edges],
+        "mermaid": mermaid, "dot": dot, "saved_to": saved_to,
+    }
+
+
+# ─────────────────────────────────────────────
+# Decompile All
+# ─────────────────────────────────────────────
+
+def _handle_decompile_all(params):
+    """Decompile all (or filtered) functions and save to a .c file."""
+    _require_decompiler()
+    import ida_hexrays, idc, idautils, ida_funcs
+    filt = params.get("filter", "")
+    skip_thunks = params.get("skip_thunks", True)
+    skip_libs = params.get("skip_libs", True)
+    output_path = _require_param(params, "output")
+
+    results = []
+    success = 0
+    failed = 0
+    skipped = 0
+    for ea in idautils.Functions():
+        func = ida_funcs.get_func(ea)
+        if not func:
+            continue
+        name = idc.get_func_name(ea) or ""
+        if filt and filt.lower() not in name.lower():
+            continue
+        if skip_thunks and (func.flags & ida_funcs.FUNC_THUNK):
+            skipped += 1
+            continue
+        if skip_libs and (func.flags & ida_funcs.FUNC_LIB):
+            skipped += 1
+            continue
+        try:
+            cfunc = ida_hexrays.decompile(func.start_ea)
+            if cfunc:
+                results.append(f"// ── {name} ({_fmt_addr(ea)}) ──\n{str(cfunc)}")
+                success += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+
+    text = "\n\n".join(results)
+    _save_output(output_path, text)
+    return {
+        "total": success + failed + skipped, "success": success,
+        "failed": failed, "skipped": skipped,
+        "saved_to": output_path,
+    }
+
+
+# ─────────────────────────────────────────────
+# Type Info (Local Types beyond structs/enums)
+# ─────────────────────────────────────────────
+
+def _handle_list_types(params):
+    """List all local types (typedefs, function prototypes, etc.)."""
+    filt = params.get("filter", "")
+    kind = params.get("kind", "all")
+
+    def check_fn(tif):
+        if kind == "all":
+            return True
+        if kind == "typedef":
+            return tif.is_typeref()
+        if kind == "funcptr":
+            return tif.is_funcptr() or tif.is_func()
+        if kind == "struct":
+            return tif.is_struct() or tif.is_union()
+        if kind == "enum":
+            return tif.is_enum()
+        # "other"
+        return not (tif.is_struct() or tif.is_union() or tif.is_enum()
+                    or tif.is_typeref() or tif.is_funcptr() or tif.is_func())
+
+    def extra_fn(tif, _ordinal):
+        k = ("struct" if tif.is_struct() else
+             "union" if tif.is_union() else
+             "enum" if tif.is_enum() else
+             "typedef" if tif.is_typeref() else
+             "funcptr" if tif.is_funcptr() or tif.is_func() else "other")
+        return {"kind": k, "size": tif.get_size(), "declaration": str(tif)}
+
+    types = _list_type_info(check_fn, filt, extra_fn)
+    return _paginate(types, params)
+
+
+def _handle_get_type(params):
+    """Get detailed info for a named local type."""
+    import ida_typeinf
+    name = _require_param(params, "name")
+    tif = ida_typeinf.tinfo_t()
+    if not tif.get_named_type(ida_typeinf.get_idati(), name):
+        raise RpcError("TYPE_NOT_FOUND", f"Type not found: {name}")
+    result = {
+        "name": name, "size": tif.get_size(),
+        "declaration": str(tif),
+        "is_struct": tif.is_struct(), "is_union": tif.is_union(),
+        "is_enum": tif.is_enum(), "is_typedef": tif.is_typeref(),
+        "is_funcptr": tif.is_funcptr() or tif.is_func(),
+    }
+    if tif.is_funcptr() or tif.is_func():
+        fi = ida_typeinf.func_type_data_t()
+        target = tif
+        if tif.is_funcptr():
+            target = tif.get_pointed_object()
+        if target.get_func_details(fi):
+            result["return_type"] = str(target.get_rettype())
+            result["args"] = [{"name": fi[i].name or f"a{i+1}", "type": str(fi[i].type)}
+                              for i in range(fi.size())]
+    return result
+
+
+# ─────────────────────────────────────────────
+# Strings with Xrefs
+# ─────────────────────────────────────────────
+
+def _handle_strings_xrefs(params):
+    """Get strings with their referencing functions in one call."""
+    import idautils, idc, ida_funcs
+    filt = params.get("filter", "")
+    max_results = _clamp_int(params, "max_results", DEFAULT_SEARCH_MAX, MAX_SEARCH_RESULTS)
+    min_refs = int(params.get("min_refs", 0))
+
+    results = []
+    for s in idautils.Strings():
+        if len(results) >= max_results:
+            break
+        val = idc.get_strlit_contents(s.ea, s.length, s.strtype)
+        if val is None:
+            continue
+        try:
+            decoded = val.decode("utf-8", errors="replace")
+        except Exception:
+            decoded = val.hex()
+        if filt and filt.lower() not in decoded.lower():
+            continue
+        refs = []
+        for xref in idautils.XrefsTo(s.ea):
+            func = ida_funcs.get_func(xref.frm)
+            refs.append({
+                "addr": _fmt_addr(xref.frm),
+                "func_addr": _fmt_addr(func.start_ea) if func else None,
+                "func_name": idc.get_func_name(func.start_ea) if func else "",
+                "type": _xref_type_str(xref.type),
+            })
+        if min_refs and len(refs) < min_refs:
+            continue
+        enc = "utf-16" if s.strtype == STRING_TYPE_UNICODE else "ascii"
+        results.append({
+            "addr": _fmt_addr(s.ea), "value": decoded,
+            "length": s.length, "encoding": enc,
+            "ref_count": len(refs), "refs": refs,
+        })
+    return {"total": len(results), "results": results}
+
+
+# ─────────────────────────────────────────────
+# Function Similarity
+# ─────────────────────────────────────────────
+
+def _handle_func_similarity(params):
+    """Compare two functions by size, basic blocks, and call graph."""
+    import ida_funcs, ida_gdl, idc, idautils
+    ea_a = _resolve_addr(_require_param(params, "addr_a"))
+    ea_b = _resolve_addr(_require_param(params, "addr_b"))
+    func_a = _require_function(ea_a)
+    func_b = _require_function(ea_b)
+
+    def _func_metrics(func):
+        block_count = sum(1 for _ in ida_gdl.FlowChart(func))
+        callees = set()
+        for item_ea in idautils.FuncItems(func.start_ea):
+            for xref in idautils.XrefsFrom(item_ea):
+                target = ida_funcs.get_func(xref.to)
+                if target and target.start_ea != func.start_ea:
+                    callees.add(idc.get_func_name(target.start_ea)
+                                or _fmt_addr(target.start_ea))
+        return {
+            "addr": _fmt_addr(func.start_ea),
+            "name": idc.get_func_name(func.start_ea) or "",
+            "size": func.size(),
+            "block_count": block_count,
+            "callee_count": len(callees),
+            "callees": sorted(callees),
+        }
+
+    m_a = _func_metrics(func_a)
+    m_b = _func_metrics(func_b)
+    max_size = max(m_a["size"], m_b["size"])
+    max_blocks = max(m_a["block_count"], m_b["block_count"])
+    size_ratio = min(m_a["size"], m_b["size"]) / max_size if max_size else 1.0
+    block_ratio = min(m_a["block_count"], m_b["block_count"]) / max_blocks if max_blocks else 1.0
+    common_callees = set(m_a["callees"]) & set(m_b["callees"])
+    all_callees = set(m_a["callees"]) | set(m_b["callees"])
+    callee_jaccard = len(common_callees) / len(all_callees) if all_callees else 1.0
+    overall = round((size_ratio + block_ratio + callee_jaccard) / 3, 4)
+    return {
+        "func_a": m_a, "func_b": m_b,
+        "similarity": {
+            "size_ratio": round(size_ratio, 4),
+            "block_ratio": round(block_ratio, 4),
+            "callee_jaccard": round(callee_jaccard, 4),
+            "overall": overall,
+        },
+        "common_callees": sorted(common_callees),
+    }
+
+
+# ─────────────────────────────────────────────
+# Data Refs (global variable / data segment)
+# ─────────────────────────────────────────────
+
+def _handle_data_refs(params):
+    """Analyze data references: named globals in data segments with xrefs."""
+    import idautils, idc, ida_segment, ida_funcs
+    filt = params.get("filter", "")
+    max_results = _clamp_int(params, "max_results", DEFAULT_SEARCH_MAX, MAX_SEARCH_RESULTS)
+    segment_filter = params.get("segment", "")
+
+    results = []
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
+        if not seg:
+            continue
+        seg_name = ida_segment.get_segm_name(seg) or ""
+        if segment_filter:
+            if segment_filter.lower() not in seg_name.lower():
+                continue
+        elif seg.perm & SEGPERM_EXEC:
+            continue
+
+        ea = seg.start_ea
+        while ea < seg.end_ea and len(results) < max_results:
+            name = idc.get_name(ea)
+            if not name or name.startswith(("unk_", "byte_", "word_", "dword_", "qword_")):
+                ea = idc.next_head(ea, seg.end_ea)
+                if ea == idc.BADADDR:
+                    break
+                continue
+            if filt and filt.lower() not in name.lower():
+                ea = idc.next_head(ea, seg.end_ea)
+                if ea == idc.BADADDR:
+                    break
+                continue
+            refs = []
+            for xref in idautils.XrefsTo(ea):
+                func = ida_funcs.get_func(xref.frm)
+                refs.append({
+                    "addr": _fmt_addr(xref.frm),
+                    "func": idc.get_func_name(func.start_ea) if func else "",
+                    "type": _xref_type_str(xref.type),
+                })
+            results.append({
+                "addr": _fmt_addr(ea), "name": name,
+                "segment": seg_name, "size": idc.get_item_size(ea),
+                "ref_count": len(refs), "refs": refs,
+            })
+            ea = idc.next_head(ea, seg.end_ea)
+            if ea == idc.BADADDR:
+                break
+
+    return {"total": len(results), "results": results}
+
+
+# ─────────────────────────────────────────────
+# Basic Blocks + CFG
+# ─────────────────────────────────────────────
+
+def _handle_basic_blocks(params):
+    """Get basic blocks and CFG for a function."""
+    import ida_gdl, idc
+    ea = _resolve_addr(params.get("addr"))
+    func = _require_function(ea)
+
+    fc = ida_gdl.FlowChart(func)
+    blocks = []
+    nodes = {}
+    edges = []
+
+    for bb in fc:
+        addr_str = _fmt_addr(bb.start_ea)
+        end_str = _fmt_addr(bb.end_ea)
+        size = bb.end_ea - bb.start_ea
+        first_insn = idc.generate_disasm_line(bb.start_ea, 0) or ""
+        last_ea = idc.prev_head(bb.end_ea, bb.start_ea)
+        last_insn = idc.generate_disasm_line(last_ea, 0) if last_ea != idc.BADADDR else ""
+
+        safe_insn = first_insn.replace('"', "'")
+        nodes[addr_str] = f"{addr_str}\\n{safe_insn}"
+
+        succs = []
+        for succ in bb.succs():
+            succ_addr = _fmt_addr(succ.start_ea)
+            succs.append(succ_addr)
+            edges.append((addr_str, succ_addr))
+
+        preds = []
+        for pred in bb.preds():
+            preds.append(_fmt_addr(pred.start_ea))
+
+        blocks.append({
+            "start": addr_str, "end": end_str, "size": size,
+            "first_insn": first_insn, "last_insn": last_insn or "",
+            "successors": succs, "predecessors": preds,
+        })
+
+    func_name = idc.get_func_name(func.start_ea) or ""
+    root_addr = _fmt_addr(func.start_ea)
+    mermaid = _generate_mermaid_graph(nodes, edges)
+    dot = _generate_dot_graph(nodes, edges, root_addr)
+    saved_to = _save_output(params.get("output"), mermaid)
+    return {
+        "addr": root_addr, "name": func_name,
+        "block_count": len(blocks), "edge_count": len(edges),
+        "blocks": blocks,
+        "mermaid": mermaid, "dot": dot, "saved_to": saved_to,
+    }
+
+
+# ─────────────────────────────────────────────
 # Dispatch + Methods
 # ─────────────────────────────────────────────
 
@@ -1489,6 +1861,14 @@ _METHODS = {
     "detect_vtables": _handle_detect_vtables,
     "apply_sig": _handle_apply_sig,
     "list_sigs": _handle_list_sigs,
+    "cross_refs": _handle_cross_refs,
+    "decompile_all": _handle_decompile_all,
+    "list_types": _handle_list_types,
+    "get_type": _handle_get_type,
+    "strings_xrefs": _handle_strings_xrefs,
+    "func_similarity": _handle_func_similarity,
+    "data_refs": _handle_data_refs,
+    "basic_blocks": _handle_basic_blocks,
 }
 
 _METHOD_DESCRIPTIONS = [
@@ -1540,6 +1920,14 @@ _METHOD_DESCRIPTIONS = [
     ("detect_vtables", "Detect virtual function tables"),
     ("apply_sig", "Apply FLIRT signature"),
     ("list_sigs", "List available FLIRT signatures"),
+    ("cross_refs", "Multi-level xref chain tracing"),
+    ("decompile_all", "Decompile all functions to file"),
+    ("list_types", "List local types (typedef, funcptr, etc.)"),
+    ("get_type", "Get detailed type info"),
+    ("strings_xrefs", "Strings with referencing functions"),
+    ("func_similarity", "Compare two functions by similarity"),
+    ("data_refs", "Data segment reference analysis"),
+    ("basic_blocks", "Basic blocks and CFG for a function"),
 ]
 
 

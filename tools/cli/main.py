@@ -22,6 +22,9 @@ from .commands import (
     cmd_compare, cmd_enums, cmd_search_code, cmd_code_diff,
     cmd_auto_rename, cmd_export_script, cmd_vtables, cmd_sigs,
     cmd_update, cmd_completions,
+    cmd_cross_refs, cmd_decompile_all, cmd_type_info,
+    cmd_strings_xrefs, cmd_func_similarity, cmd_data_refs,
+    cmd_basic_blocks,
 )
 
 
@@ -79,6 +82,13 @@ def _build_dispatch(args, config, config_path):
         "sigs": lambda: cmd_sigs(args, config),
         "update": lambda: cmd_update(args),
         "completions": lambda: cmd_completions(args),
+        "cross-refs": lambda: cmd_cross_refs(args, config),
+        "decompile-all": lambda: cmd_decompile_all(args, config),
+        "type-info": lambda: cmd_type_info(args, config),
+        "strings-xrefs": lambda: cmd_strings_xrefs(args, config),
+        "func-similarity": lambda: cmd_func_similarity(args, config),
+        "data-refs": lambda: cmd_data_refs(args, config),
+        "basic-blocks": lambda: cmd_basic_blocks(args, config),
     }
     for cmd_name, (method, header_fn, format_fn) in _LIST_COMMANDS.items():
         d[cmd_name] = (lambda m=method, h=header_fn, f=format_fn:
@@ -328,6 +338,51 @@ def _build_parser():
     sig_sub.add_parser("list", help="List available signatures")
     sig_apply = sig_sub.add_parser("apply", help="Apply signature")
     sig_apply.add_argument("sig_name", help="Signature name")
+
+    p = sub.add_parser("cross-refs", help="Multi-level xref chain tracing", parents=[common])
+    p.add_argument("addr", help="Start address or name")
+    p.add_argument("--depth", type=int, default=3, help="Max depth (default 3)")
+    p.add_argument("--direction", choices=["to", "from", "both"], default="to")
+    p.add_argument("--format", choices=["mermaid", "dot"], default="mermaid")
+    p.add_argument("--out", default=None)
+
+    p = sub.add_parser("decompile-all", help="Decompile all functions to .c file", parents=[common])
+    p.add_argument("--out", required=True, help="Output .c file path")
+    p.add_argument("--filter", default=None, help="Filter by function name")
+    p.add_argument("--include-thunks", action="store_true")
+    p.add_argument("--include-libs", action="store_true")
+
+    ti = sub.add_parser("type-info", help="Query local types", parents=[common])
+    ti_sub = ti.add_subparsers(dest="action")
+    ti_list = ti_sub.add_parser("list", help="List local types")
+    ti_list.add_argument("--filter", default=None)
+    ti_list.add_argument("--kind", choices=["all", "typedef", "funcptr", "struct", "enum", "other"], default="all")
+    ti_list.add_argument("--offset", type=int, default=None)
+    ti_list.add_argument("--count", type=int, default=None)
+    ti_show = ti_sub.add_parser("show", help="Show type details")
+    ti_show.add_argument("name", help="Type name")
+
+    p = sub.add_parser("strings-xrefs", help="Strings with referencing functions", parents=[common])
+    p.add_argument("--filter", default=None, help="Filter strings by content")
+    p.add_argument("--max", type=int, default=None, help="Max results")
+    p.add_argument("--min-refs", type=int, default=0, help="Min xref count to include")
+    p.add_argument("--out", default=None)
+
+    p = sub.add_parser("func-similarity", help="Compare two functions", parents=[common])
+    p.add_argument("addr_a", help="First function address or name")
+    p.add_argument("addr_b", help="Second function address or name")
+
+    p = sub.add_parser("data-refs", help="Data segment reference analysis", parents=[common])
+    p.add_argument("--filter", default=None, help="Filter by name")
+    p.add_argument("--segment", default=None, help="Filter by segment name (e.g. .data)")
+    p.add_argument("--max", type=int, default=None)
+    p.add_argument("--out", default=None)
+
+    p = sub.add_parser("basic-blocks", help="Basic blocks and CFG", parents=[common])
+    p.add_argument("addr", help="Function address or name")
+    p.add_argument("--format", choices=["mermaid", "dot"], default="mermaid")
+    p.add_argument("--graph-only", action="store_true", help="Only output graph")
+    p.add_argument("--out", default=None)
 
     sub.add_parser("update", help="Self-update from git")
 

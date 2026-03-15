@@ -1818,3 +1818,202 @@ Register-ArgumentCompleter -CommandName ida-cli -Native -ScriptBlock {{
 }}""")
     else:
         _log_err(f"Unsupported shell: {shell}. Use bash, zsh, or powershell.")
+
+
+# ─────────────────────────────────────────────
+# Cross-refs (multi-level xref chain)
+# ─────────────────────────────────────────────
+
+def cmd_cross_refs(args, config):
+    """Multi-level xref chain tracing."""
+    p = {"addr": args.addr, "depth": _opt(args, 'depth', 3),
+         "direction": _opt(args, 'direction', 'to')}
+    r = _rpc_call(args, config, "cross_refs", p)
+    if not r:
+        return
+    print(f"  Root: {r.get('root', '')}  Depth: {r.get('depth')}  Direction: {r.get('direction')}")
+    print(f"  Nodes: {r.get('nodes', 0)}, Edges: {r.get('edges', 0)}")
+    for entry in r.get("chain", []):
+        indent = "  " * entry["level"]
+        print(f"    {indent}{entry['addr']}  {entry['name']}")
+    out_path = _opt(args, 'out')
+    if out_path:
+        fmt = _opt(args, 'format', 'mermaid')
+        content = r.get("dot" if fmt == "dot" else "mermaid", "")
+        _save_local(out_path, content)
+
+
+# ─────────────────────────────────────────────
+# Decompile All
+# ─────────────────────────────────────────────
+
+def cmd_decompile_all(args, config):
+    """Decompile all functions to .c file."""
+    out_path = args.out
+    p = {"output": out_path, "filter": _opt(args, 'filter', ''),
+         "skip_thunks": not _opt(args, 'include_thunks', False),
+         "skip_libs": not _opt(args, 'include_libs', False)}
+    r = _rpc_call(args, config, "decompile_all", p)
+    if not r:
+        return
+    print(f"  Decompiled: {r.get('success', 0)}/{r.get('total', 0)} functions")
+    print(f"  Failed: {r.get('failed', 0)}, Skipped: {r.get('skipped', 0)}")
+    print(f"  Saved to: {r.get('saved_to', '')}")
+
+
+# ─────────────────────────────────────────────
+# Type Info
+# ─────────────────────────────────────────────
+
+def cmd_type_info(args, config):
+    """Query IDA local types."""
+    action = _opt(args, 'action', 'list')
+
+    if action == "list":
+        p = {}
+        if _opt(args, 'filter'):
+            p["filter"] = args.filter
+        if _opt(args, 'kind'):
+            p["kind"] = args.kind
+        if _opt(args, 'offset') is not None:
+            p["offset"] = args.offset
+        if _opt(args, 'count') is not None:
+            p["count"] = args.count
+        r = _rpc_call(args, config, "list_types", p)
+        if not r:
+            return
+        print(f"  Total: {r.get('total', 0)} (showing {r.get('count', 0)} from offset {r.get('offset', 0)})")
+        for t in r.get("data", []):
+            print(f"    {t['name']:<40}  {t.get('kind', ''):<8}  size={t.get('size', '?')}")
+
+    elif action == "show":
+        r = _rpc_call(args, config, "get_type", {"name": args.name})
+        if not r:
+            return
+        print(f"  Name:        {r['name']}")
+        print(f"  Size:        {r.get('size', '?')}")
+        print(f"  Declaration: {r.get('declaration', '')}")
+        flags = []
+        for f in ("is_struct", "is_union", "is_enum", "is_typedef", "is_funcptr"):
+            if r.get(f):
+                flags.append(f.replace("is_", ""))
+        if flags:
+            print(f"  Type:        {', '.join(flags)}")
+        if r.get("return_type"):
+            print(f"  Return:      {r['return_type']}")
+        if r.get("args"):
+            print(f"  Args:")
+            for a in r["args"]:
+                print(f"    {a['type']:<30}  {a['name']}")
+
+
+# ─────────────────────────────────────────────
+# Strings with Xrefs
+# ─────────────────────────────────────────────
+
+def cmd_strings_xrefs(args, config):
+    """Strings with referencing functions."""
+    p = {}
+    if _opt(args, 'filter'):
+        p["filter"] = args.filter
+    if _opt(args, 'max'):
+        p["max_results"] = args.max
+    if _opt(args, 'min_refs'):
+        p["min_refs"] = args.min_refs
+    r = _rpc_call(args, config, "strings_xrefs", p)
+    if not r:
+        return
+    print(f"  Total: {r.get('total', 0)} strings with xrefs")
+    for entry in r.get("results", []):
+        val = _truncate(entry['value'], 60)
+        print(f"\n    {entry['addr']}  \"{val}\"  ({entry['ref_count']} refs)")
+        for ref in entry.get("refs", [])[:5]:
+            fn = ref.get("func_name", "")
+            print(f"      <- {ref['addr']}  {fn}  [{ref['type']}]")
+        if entry['ref_count'] > 5:
+            print(f"      ... and {entry['ref_count'] - 5} more")
+    out_path = _opt(args, 'out')
+    if out_path:
+        _save_local(out_path, json.dumps(r, ensure_ascii=False, indent=2))
+
+
+# ─────────────────────────────────────────────
+# Function Similarity
+# ─────────────────────────────────────────────
+
+def cmd_func_similarity(args, config):
+    """Compare two functions by similarity."""
+    p = {"addr_a": args.addr_a, "addr_b": args.addr_b}
+    r = _rpc_call(args, config, "func_similarity", p)
+    if not r:
+        return
+    a, b = r["func_a"], r["func_b"]
+    sim = r["similarity"]
+    print(f"  Function A: {a['name']} ({a['addr']})  size={a['size']}  blocks={a['block_count']}  callees={a['callee_count']}")
+    print(f"  Function B: {b['name']} ({b['addr']})  size={b['size']}  blocks={b['block_count']}  callees={b['callee_count']}")
+    print(f"\n  Similarity:")
+    print(f"    Size ratio:      {sim['size_ratio']:.4f}")
+    print(f"    Block ratio:     {sim['block_ratio']:.4f}")
+    print(f"    Callee Jaccard:  {sim['callee_jaccard']:.4f}")
+    print(f"    Overall:         {sim['overall']:.4f}")
+    common = r.get("common_callees", [])
+    if common:
+        print(f"\n  Common callees ({len(common)}):")
+        for c in common[:20]:
+            print(f"    {c}")
+        if len(common) > 20:
+            print(f"    ... and {len(common) - 20} more")
+
+
+# ─────────────────────────────────────────────
+# Data Refs
+# ─────────────────────────────────────────────
+
+def cmd_data_refs(args, config):
+    """Data segment reference analysis."""
+    p = {}
+    if _opt(args, 'filter'):
+        p["filter"] = args.filter
+    if _opt(args, 'segment'):
+        p["segment"] = args.segment
+    if _opt(args, 'max'):
+        p["max_results"] = args.max
+    r = _rpc_call(args, config, "data_refs", p)
+    if not r:
+        return
+    print(f"  Total: {r.get('total', 0)} data references")
+    for entry in r.get("results", []):
+        print(f"\n    {entry['addr']}  {entry['name']}  [{entry['segment']}]  size={entry['size']}  refs={entry['ref_count']}")
+        for ref in entry.get("refs", [])[:5]:
+            print(f"      <- {ref['addr']}  {ref.get('func', '')}  [{ref['type']}]")
+        if entry['ref_count'] > 5:
+            print(f"      ... and {entry['ref_count'] - 5} more")
+    out_path = _opt(args, 'out')
+    if out_path:
+        _save_local(out_path, json.dumps(r, ensure_ascii=False, indent=2))
+
+
+# ─────────────────────────────────────────────
+# Basic Blocks + CFG
+# ─────────────────────────────────────────────
+
+def cmd_basic_blocks(args, config):
+    """Basic blocks and CFG for a function."""
+    fmt = _opt(args, 'format', 'mermaid') or 'mermaid'
+    p = {"addr": args.addr}
+    r = _rpc_call(args, config, "basic_blocks", p)
+    if not r:
+        return
+    print(f"  Function: {r.get('name', '')} ({r.get('addr', '')})")
+    print(f"  Blocks: {r.get('block_count', 0)}, Edges: {r.get('edge_count', 0)}")
+    if not _opt(args, 'graph_only', False):
+        for bb in r.get("blocks", []):
+            succs = ", ".join(bb.get("successors", []))
+            print(f"    {bb['start']}-{bb['end']}  size={bb['size']}  -> [{succs}]")
+    out_path = _opt(args, 'out')
+    content = r.get("dot" if fmt == "dot" else "mermaid", "")
+    if out_path:
+        _save_local(out_path, content)
+    elif _opt(args, 'graph_only', False):
+        print()
+        print(content)
