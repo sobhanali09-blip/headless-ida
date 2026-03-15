@@ -818,6 +818,420 @@ def _handle_save_db(params):
     return {"ok": bool(ok), "idb_path": idb}
 
 
+# ─────────────────────────────────────────────
+# Annotations export/import
+# ─────────────────────────────────────────────
+
+def _handle_export_annotations(params):
+    """Export all user-applied names, comments, and types."""
+    import idc, idautils, ida_funcs, ida_nalt
+    annotations = {
+        "binary": os.path.basename(idc.get_input_file_path()),
+        "imagebase": _fmt_addr(ida_nalt.get_imagebase()),
+        "names": [],
+        "comments": [],
+        "types": [],
+    }
+    _auto_prefixes = ("sub_", "nullsub_", "loc_", "unk_", "byte_", "word_",
+                      "dword_", "qword_", "off_", "stru_", "asc_")
+    # Collect renamed functions
+    for ea in idautils.Functions():
+        name = idc.get_func_name(ea)
+        if name and not any(name.startswith(p) for p in _auto_prefixes):
+            annotations["names"].append({"addr": _fmt_addr(ea), "name": name})
+        # Comments
+        cmt = idc.get_cmt(ea, False)
+        rcmt = idc.get_cmt(ea, True)
+        fcmt = idc.get_func_cmt(ea, False)
+        if cmt or rcmt or fcmt:
+            entry = {"addr": _fmt_addr(ea)}
+            if cmt: entry["comment"] = cmt
+            if rcmt: entry["repeatable"] = rcmt
+            if fcmt: entry["func_comment"] = fcmt
+            annotations["comments"].append(entry)
+        # Types
+        type_str = idc.get_type(ea)
+        if type_str:
+            annotations["types"].append({"addr": _fmt_addr(ea), "type": type_str})
+    # Also collect non-function names (globals, data labels)
+    for item in idautils.Names():
+        ea = item[0]
+        name = item[1]
+        if not any(name.startswith(p) for p in _auto_prefixes):
+            func = ida_funcs.get_func(ea)
+            if not func:
+                annotations["names"].append({"addr": _fmt_addr(ea), "name": name})
+    saved_to = _save_output(params.get("output"), annotations, fmt="json")
+    annotations["saved_to"] = saved_to
+    return annotations
+
+
+def _handle_import_annotations(params):
+    """Import annotations from JSON."""
+    import idc, ida_typeinf
+    data = params.get("data")
+    if not data:
+        raise RpcError("INVALID_PARAMS", "data parameter required (JSON annotations)")
+    stats = {"names": 0, "comments": 0, "types": 0, "errors": 0}
+    for entry in data.get("names", []):
+        try:
+            ea = _resolve_addr(entry["addr"])
+            idc.set_name(ea, entry["name"], idc.SN_NOWARN | idc.SN_NOCHECK)
+            stats["names"] += 1
+        except Exception:
+            stats["errors"] += 1
+    for entry in data.get("comments", []):
+        try:
+            ea = _resolve_addr(entry["addr"])
+            if "comment" in entry:
+                idc.set_cmt(ea, entry["comment"], False)
+            if "repeatable" in entry:
+                idc.set_cmt(ea, entry["repeatable"], True)
+            if "func_comment" in entry:
+                idc.set_func_cmt(ea, entry["func_comment"], False)
+            stats["comments"] += 1
+        except Exception:
+            stats["errors"] += 1
+    for entry in data.get("types", []):
+        try:
+            ea = _resolve_addr(entry["addr"])
+            decl = entry["type"].rstrip(";") + ";"
+            tif = ida_typeinf.tinfo_t()
+            til = ida_typeinf.get_idati()
+            if ida_typeinf.parse_decl(tif, til, decl, ida_typeinf.PT_SIL):
+                ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE)
+            stats["types"] += 1
+        except Exception:
+            stats["errors"] += 1
+    if _config["analysis"]["auto_save"]:
+        save_db()
+    return stats
+
+
+# ─────────────────────────────────────────────
+# Call graph
+# ─────────────────────────────────────────────
+
+def _handle_callgraph(params):
+    """Build call graph starting from a function."""
+    import idc, ida_funcs, idautils
+    ea = _resolve_addr(params.get("addr"))
+    depth = min(int(params.get("depth", 3)), 10)
+    direction = params.get("direction", "callees")  # callees, callers, both
+
+    nodes = {}  # addr -> name
+    edges = []  # (from_addr, to_addr)
+
+    def collect_callees(start_ea, cur_depth):
+        if cur_depth > depth:
+            return
+        addr_str = _fmt_addr(start_ea)
+        if addr_str in nodes:
+            return
+        name = idc.get_func_name(start_ea) or addr_str
+        nodes[addr_str] = name
+        func = ida_funcs.get_func(start_ea)
+        if not func:
+            return
+        seen = set()
+        for item_ea in idautils.FuncItems(func.start_ea):
+            for xref in idautils.XrefsFrom(item_ea):
+                target = ida_funcs.get_func(xref.to)
+                if target and target.start_ea != func.start_ea and target.start_ea not in seen:
+                    seen.add(target.start_ea)
+                    t_addr = _fmt_addr(target.start_ea)
+                    edges.append((addr_str, t_addr))
+                    collect_callees(target.start_ea, cur_depth + 1)
+
+    def collect_callers(start_ea, cur_depth):
+        if cur_depth > depth:
+            return
+        addr_str = _fmt_addr(start_ea)
+        if addr_str in nodes:
+            return
+        name = idc.get_func_name(start_ea) or addr_str
+        nodes[addr_str] = name
+        for xref in idautils.XrefsTo(start_ea):
+            caller_func = ida_funcs.get_func(xref.frm)
+            if caller_func and caller_func.start_ea != start_ea:
+                c_addr = _fmt_addr(caller_func.start_ea)
+                edges.append((c_addr, addr_str))
+                collect_callers(caller_func.start_ea, cur_depth + 1)
+
+    if direction in ("callees", "both"):
+        collect_callees(ea, 0)
+    if direction in ("callers", "both"):
+        # Reset nodes tracking for callers if both
+        collect_callers(ea, 0)
+
+    # Generate DOT
+    dot_lines = ["digraph callgraph {", '  rankdir=LR;', '  node [shape=box, style=filled, fillcolor="#f0f0f0"];']
+    root_addr = _fmt_addr(ea)
+    for addr, name in nodes.items():
+        color = '#ffcccc' if addr == root_addr else '#f0f0f0'
+        label = name.replace('"', '\\"')
+        dot_lines.append(f'  "{addr}" [label="{label}", fillcolor="{color}"];')
+    for src, dst in edges:
+        dot_lines.append(f'  "{src}" -> "{dst}";')
+    dot_lines.append("}")
+    dot = "\n".join(dot_lines)
+
+    # Generate Mermaid
+    mermaid_lines = ["graph LR"]
+    for addr, name in nodes.items():
+        safe = name.replace('"', "'")
+        mermaid_lines.append(f'  {addr.replace("0x", "x")}["{safe}"]')
+    for src, dst in edges:
+        mermaid_lines.append(f'  {src.replace("0x", "x")} --> {dst.replace("0x", "x")}')
+    mermaid = "\n".join(mermaid_lines)
+
+    saved_to = _save_output(params.get("output"), dot)
+    return {
+        "root": root_addr,
+        "root_name": nodes.get(root_addr, ""),
+        "nodes": len(nodes),
+        "edges": len(edges),
+        "dot": dot,
+        "mermaid": mermaid,
+        "saved_to": saved_to,
+    }
+
+
+# ─────────────────────────────────────────────
+# Binary patching
+# ─────────────────────────────────────────────
+
+def _handle_patch_bytes(params):
+    """Patch bytes at an address."""
+    import ida_bytes, idc
+    if not _config["security"]["exec_enabled"]:
+        raise RpcError("PATCH_DISABLED",
+                        "Patching requires security.exec_enabled=true",
+                        suggestion="Set security.exec_enabled to true in config.json")
+    ea = _resolve_addr(params.get("addr"))
+    hex_str = params.get("bytes")
+    if not hex_str:
+        raise RpcError("INVALID_PARAMS", "bytes parameter required (hex string)")
+    try:
+        raw = bytes.fromhex(hex_str.replace(" ", ""))
+    except ValueError:
+        raise RpcError("INVALID_PARAMS", "Invalid hex string")
+    # Read original bytes for undo info
+    original = ida_bytes.get_bytes(ea, len(raw))
+    orig_hex = " ".join(f"{b:02X}" for b in original) if original else ""
+    for i, byte_val in enumerate(raw):
+        ida_bytes.patch_byte(ea + i, byte_val)
+    if _config["analysis"]["auto_save"]:
+        save_db()
+    return {
+        "addr": _fmt_addr(ea),
+        "size": len(raw),
+        "original": orig_hex,
+        "patched": " ".join(f"{b:02X}" for b in raw),
+    }
+
+
+# ─────────────────────────────────────────────
+# Search by constant/immediate value
+# ─────────────────────────────────────────────
+
+def _handle_search_const(params):
+    """Search for immediate/constant values in instructions."""
+    import idautils, idc, ida_ua, ida_funcs
+    value = params.get("value")
+    if value is None:
+        raise RpcError("INVALID_PARAMS", "value parameter required")
+    target = int(str(value), 0)  # supports hex, decimal, octal
+    max_results = min(int(params.get("max_results", DEFAULT_SEARCH_MAX)), MAX_SEARCH_RESULTS)
+    results = []
+    for seg_ea in idautils.Segments():
+        ea = idc.get_segm_start(seg_ea)
+        end = idc.get_segm_end(seg_ea)
+        while ea < end and len(results) < max_results:
+            insn = ida_ua.insn_t()
+            length = ida_ua.decode_insn(insn, ea)
+            if length > 0:
+                for op in insn.ops:
+                    if op.type == 0:  # o_void
+                        break
+                    if op.type == ida_ua.o_imm and op.value == target:
+                        func = ida_funcs.get_func(ea)
+                        results.append({
+                            "addr": _fmt_addr(ea),
+                            "func": idc.get_func_name(ea) or "" if func else "",
+                            "disasm": idc.GetDisasm(ea),
+                        })
+                        break
+                ea += length
+            else:
+                ea += 1
+    saved_to = _save_output(params.get("output"), results, fmt="json")
+    return {"value": _fmt_addr(target), "total": len(results), "results": results, "saved_to": saved_to}
+
+
+# ─────────────────────────────────────────────
+# Struct/enum management
+# ─────────────────────────────────────────────
+
+def _handle_list_structs(params):
+    """List all structs/unions in the type library."""
+    import ida_typeinf
+    filt = params.get("filter", "")
+    til = ida_typeinf.get_idati()
+    structs = []
+    qty = ida_typeinf.get_ordinal_count(til)
+    for ordinal in range(1, qty):
+        tif = ida_typeinf.tinfo_t()
+        if tif.get_numbered_type(til, ordinal):
+            if tif.is_struct() or tif.is_union():
+                name = tif.get_type_name()
+                if not name:
+                    continue
+                if filt and filt.lower() not in name.lower():
+                    continue
+                structs.append({
+                    "ordinal": ordinal,
+                    "name": name,
+                    "size": tif.get_size(),
+                    "is_union": tif.is_union(),
+                    "member_count": tif.get_udt_nmembers(),
+                })
+    return {"total": len(structs), "structs": structs}
+
+
+def _handle_get_struct(params):
+    """Get struct details with members."""
+    import ida_typeinf
+    name = params.get("name")
+    if not name:
+        raise RpcError("INVALID_PARAMS", "name parameter required")
+    tif = ida_typeinf.tinfo_t()
+    if not tif.get_named_type(ida_typeinf.get_idati(), name):
+        raise RpcError("STRUCT_NOT_FOUND", f"Struct not found: {name}")
+    if not (tif.is_struct() or tif.is_union()):
+        raise RpcError("NOT_A_STRUCT", f"{name} is not a struct/union")
+    members = []
+    udt = ida_typeinf.udt_type_data_t()
+    if tif.get_udt_details(udt):
+        for i in range(udt.size()):
+            m = udt[i]
+            members.append({
+                "offset": m.offset // 8,  # bits to bytes
+                "name": m.name,
+                "size": m.size // 8,
+                "type": str(m.type),
+            })
+    return {
+        "name": name,
+        "size": tif.get_size(),
+        "is_union": tif.is_union(),
+        "members": members,
+    }
+
+
+def _handle_create_struct(params):
+    """Create a new struct via type declaration."""
+    import ida_typeinf
+    name = params.get("name")
+    if not name:
+        raise RpcError("INVALID_PARAMS", "name parameter required")
+    is_union = params.get("is_union", False)
+    members = params.get("members", [])
+    keyword = "union" if is_union else "struct"
+    if members:
+        fields = []
+        for m in members:
+            mname = m.get("name", "field")
+            msize = int(m.get("size", 1))
+            mtype = m.get("type", "")
+            if mtype:
+                fields.append(f"  {mtype} {mname};")
+            else:
+                size_map = {1: "char", 2: "short", 4: "int", 8: "__int64"}
+                ctype = size_map.get(msize)
+                if ctype:
+                    fields.append(f"  {ctype} {mname};")
+                else:
+                    fields.append(f"  char {mname}[{msize}];")
+        body = "\n".join(fields)
+        decl = f"{keyword} {name} {{\n{body}\n}};"
+    else:
+        decl = f"{keyword} {name} {{ char __placeholder; }};"
+    result = ida_typeinf.idc_parse_types(decl, 0)
+    if result != 0:
+        raise RpcError("CREATE_STRUCT_FAILED", f"Cannot create struct: {decl}")
+    if _config["analysis"]["auto_save"]:
+        save_db()
+    return {"ok": True, "name": name, "members_added": len(members)}
+
+
+# ─────────────────────────────────────────────
+# Snapshot
+# ─────────────────────────────────────────────
+
+def _handle_snapshot_save(params):
+    """Save IDB snapshot."""
+    import ida_loader, ida_kernwin
+    desc = params.get("description", "Snapshot")
+    ok = ida_loader.save_database(ida_loader.get_path(ida_loader.PATH_TYPE_IDB), 0)
+    # Take snapshot using IDA's snapshot API
+    try:
+        ss = ida_kernwin.snapshot_t()
+        ss.desc = desc
+        ok = ida_kernwin.take_database_snapshot(ss)
+        return {"ok": bool(ok), "description": desc, "filename": ss.filename if ok else ""}
+    except Exception as e:
+        # Fallback: just save the IDB as a backup copy
+        idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+        import shutil, datetime
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = f"{idb_path}.snapshot_{ts}"
+        shutil.copy2(idb_path, backup)
+        return {"ok": True, "description": desc, "filename": backup, "method": "file_copy"}
+
+
+def _handle_snapshot_list(params):
+    """List available snapshots."""
+    import ida_loader, glob as glob_mod, datetime
+    idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+    # Find snapshot files
+    pattern = f"{idb_path}.snapshot_*"
+    snapshots = []
+    for f in sorted(glob_mod.glob(pattern)):
+        name = os.path.basename(f)
+        mtime = os.path.getmtime(f)
+        snapshots.append({
+            "filename": f,
+            "name": name,
+            "size": os.path.getsize(f),
+            "created": datetime.datetime.fromtimestamp(mtime).isoformat(),
+        })
+    return {"total": len(snapshots), "snapshots": snapshots}
+
+
+def _handle_snapshot_restore(params):
+    """Restore IDB from a snapshot file."""
+    import ida_loader, shutil
+    filename = params.get("filename")
+    if not filename:
+        raise RpcError("INVALID_PARAMS", "filename parameter required")
+    if not os.path.isfile(filename):
+        raise RpcError("FILE_NOT_FOUND", f"Snapshot file not found: {filename}")
+    idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+    # Backup current before restore
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = f"{idb_path}.before_restore_{ts}"
+    shutil.copy2(idb_path, backup)
+    shutil.copy2(filename, idb_path)
+    return {
+        "ok": True,
+        "restored_from": filename,
+        "backup_of_current": backup,
+        "note": "Restart instance to load restored snapshot",
+    }
+
+
 def _handle_exec(params):
     if not _config["security"]["exec_enabled"]:
         raise RpcError("EXEC_DISABLED",
@@ -874,6 +1288,17 @@ _METHODS = {
     "get_comments": _handle_get_comments,
     "save_db": _handle_save_db,
     "exec": _handle_exec,
+    "export_annotations": _handle_export_annotations,
+    "import_annotations": _handle_import_annotations,
+    "callgraph": _handle_callgraph,
+    "patch_bytes": _handle_patch_bytes,
+    "search_const": _handle_search_const,
+    "list_structs": _handle_list_structs,
+    "get_struct": _handle_get_struct,
+    "create_struct": _handle_create_struct,
+    "snapshot_save": _handle_snapshot_save,
+    "snapshot_list": _handle_snapshot_list,
+    "snapshot_restore": _handle_snapshot_restore,
 }
 
 _METHOD_DESCRIPTIONS = [
@@ -904,6 +1329,17 @@ _METHOD_DESCRIPTIONS = [
     ("get_comments", "Get comments"),
     ("save_db", "Save database"),
     ("exec", "Execute Python code"),
+    ("export_annotations", "Export names/comments/types as JSON"),
+    ("import_annotations", "Import annotations from JSON"),
+    ("callgraph", "Build function call graph"),
+    ("patch_bytes", "Patch bytes at address"),
+    ("search_const", "Search for constant/immediate values"),
+    ("list_structs", "List structs and unions"),
+    ("get_struct", "Get struct details with members"),
+    ("create_struct", "Create a new struct"),
+    ("snapshot_save", "Save IDB snapshot"),
+    ("snapshot_list", "List snapshots"),
+    ("snapshot_restore", "Restore IDB from snapshot"),
 ]
 
 

@@ -1707,6 +1707,378 @@ pre {{ padding: 12px; overflow-x: auto; }}
     print(f"[+] Report generated: {out_path}")
 
 
+# ─────────────────────────────────────────────
+# Shell (Interactive REPL)
+# ─────────────────────────────────────────────
+
+def cmd_shell(args, config):
+    """Interactive IDA Python REPL."""
+    iid, info = resolve_instance(args, config)
+    if not iid:
+        return
+    if info.get("state") != "ready":
+        print(f"[-] Instance {iid} is not ready")
+        return
+    port = info.get("port")
+    binary = os.path.basename(info.get("binary", "?"))
+    print(f"[*] IDA Python Shell - {binary} ({iid})")
+    print("[*] Type 'exit' or Ctrl+C to quit")
+    print()
+    while True:
+        try:
+            code = input(f"ida({binary})>>> ")
+        except (EOFError, KeyboardInterrupt):
+            print("\n[*] Shell closed")
+            break
+        if not code.strip():
+            continue
+        if code.strip() in ("exit", "quit"):
+            print("[*] Shell closed")
+            break
+        # Multi-line: if line ends with ':', collect until blank line
+        if code.rstrip().endswith(":"):
+            lines = [code]
+            while True:
+                try:
+                    line = input("... ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not line.strip():
+                    break
+                lines.append(line)
+            code = "\n".join(lines)
+        resp = post_rpc(config, port, "exec", iid, {"code": code})
+        if "error" in resp:
+            print(f"[-] {resp['error'].get('message', '?')}")
+        else:
+            r = resp.get("result", {})
+            if r.get("stdout"):
+                print(r["stdout"], end="")
+            if r.get("stderr"):
+                print(f"[stderr] {r['stderr']}", end="")
+
+
+# ─────────────────────────────────────────────
+# Export/Import Annotations
+# ─────────────────────────────────────────────
+
+def cmd_annotations(args, config):
+    """Export or import analysis annotations."""
+    action = getattr(args, 'action', 'export')
+
+    if action == "export":
+        out_path = getattr(args, 'output', None) or "annotations.json"
+        p = {}
+        r = _rpc_call(args, config, "export_annotations", p)
+        if not r:
+            return
+        names_count = len(r.get("names", []))
+        comments_count = len(r.get("comments", []))
+        types_count = len(r.get("types", []))
+        # Save locally
+        _save_local(out_path, json.dumps(r, ensure_ascii=False, indent=2))
+        print(f"  Names: {names_count}, Comments: {comments_count}, Types: {types_count}")
+
+    elif action == "import":
+        in_path = args.input_file
+        if not os.path.isfile(in_path):
+            print(f"[-] File not found: {in_path}")
+            return
+        with open(in_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        r = _rpc_call(args, config, "import_annotations", {"data": data})
+        if not r:
+            return
+        print(f"  Applied - Names: {r.get('names', 0)}, Comments: {r.get('comments', 0)}, Types: {r.get('types', 0)}")
+        if r.get("errors"):
+            print(f"  Errors: {r['errors']}")
+
+
+# ─────────────────────────────────────────────
+# Call Graph
+# ─────────────────────────────────────────────
+
+def cmd_callgraph(args, config):
+    """Generate function call graph."""
+    fmt = getattr(args, 'format', 'mermaid') or 'mermaid'
+    depth = getattr(args, 'depth', 3)
+    direction = getattr(args, 'direction', 'callees')
+    p = {"addr": args.addr, "depth": depth, "direction": direction}
+    r = _rpc_call(args, config, "callgraph", p)
+    if not r:
+        return
+    out_path = getattr(args, 'out', None)
+    print(f"  Root: {r.get('root_name', '')} ({r.get('root', '')})")
+    print(f"  Nodes: {r.get('nodes', 0)}, Edges: {r.get('edges', 0)}")
+    if fmt == "dot":
+        content = r.get("dot", "")
+    else:
+        content = r.get("mermaid", "")
+    if out_path:
+        _save_local(out_path, content)
+    else:
+        print()
+        print(content)
+
+
+# ─────────────────────────────────────────────
+# Patch
+# ─────────────────────────────────────────────
+
+def cmd_patch(args, config):
+    """Patch bytes at an address."""
+    hex_bytes = " ".join(args.hex_bytes)
+    p = {"addr": args.addr, "bytes": hex_bytes}
+    r = _rpc_call(args, config, "patch_bytes", p)
+    if not r:
+        return
+    print(f"  Address:  {r.get('addr', '')}")
+    print(f"  Original: {r.get('original', '')}")
+    print(f"  Patched:  {r.get('patched', '')}")
+    print(f"  Size:     {r.get('size', 0)} bytes")
+
+
+# ─────────────────────────────────────────────
+# Search Constant
+# ─────────────────────────────────────────────
+
+def cmd_search_const(args, config):
+    """Search for immediate/constant values."""
+    p = {"value": args.value}
+    if getattr(args, 'max', None):
+        p["max_results"] = args.max
+    r = _rpc_call(args, config, "search_const", p)
+    if not r:
+        return
+    print(f"  Value: {r.get('value', '')}  Found: {r.get('total', 0)}")
+    for entry in r.get("results", []):
+        func = entry.get("func", "")
+        func_str = f"  [{func}]" if func else ""
+        print(f"    {entry['addr']}  {entry.get('disasm', '')}{func_str}")
+
+
+# ─────────────────────────────────────────────
+# Structs
+# ─────────────────────────────────────────────
+
+def cmd_structs(args, config):
+    """Manage structs and unions."""
+    action = getattr(args, 'action', 'list')
+
+    if action == "list":
+        p = {}
+        if getattr(args, 'filter', None):
+            p["filter"] = args.filter
+        r = _rpc_call(args, config, "list_structs", p)
+        if not r:
+            return
+        print(f"  Total: {r.get('total', 0)}")
+        for s in r.get("structs", []):
+            kind = "union" if s.get("is_union") else "struct"
+            print(f"    {s['name']:<30}  {kind:<6}  size={s['size']:<6}  members={s['member_count']}")
+
+    elif action == "show":
+        r = _rpc_call(args, config, "get_struct", {"name": args.name})
+        if not r:
+            return
+        kind = "union" if r.get("is_union") else "struct"
+        print(f"  {kind} {r['name']} (size={r['size']})")
+        print(f"  {'Offset':<8}  {'Name':<24}  {'Size':<6}  Type")
+        print(f"  {'-'*8}  {'-'*24}  {'-'*6}  {'-'*20}")
+        for m in r.get("members", []):
+            print(f"  {m['offset']:<8}  {m['name']:<24}  {m['size']:<6}  {m.get('type', '')}")
+
+    elif action == "create":
+        p = {"name": args.name}
+        if getattr(args, 'union', False):
+            p["is_union"] = True
+        members = []
+        for mdef in (getattr(args, 'members', None) or []):
+            parts = mdef.split(":")
+            mname = parts[0]
+            msize = int(parts[1]) if len(parts) > 1 else 1
+            members.append({"name": mname, "size": msize})
+        if members:
+            p["members"] = members
+        r = _rpc_call(args, config, "create_struct", p)
+        if not r:
+            return
+        print(f"  [+] Struct created: {args.name} (members: {r.get('members_added', 0)})")
+
+
+# ─────────────────────────────────────────────
+# Snapshot
+# ─────────────────────────────────────────────
+
+def cmd_snapshot(args, config):
+    """Manage IDB snapshots."""
+    action = getattr(args, 'action', 'list')
+
+    if action == "save":
+        desc = getattr(args, 'description', 'Snapshot') or 'Snapshot'
+        r = _rpc_call(args, config, "snapshot_save", {"description": desc})
+        if not r:
+            return
+        method = f" ({r.get('method', 'ida_api')})" if r.get("method") else ""
+        print(f"  [+] Snapshot saved: {r.get('filename', '')}{method}")
+
+    elif action == "list":
+        r = _rpc_call(args, config, "snapshot_list")
+        if not r:
+            return
+        snapshots = r.get("snapshots", [])
+        if not snapshots:
+            print("  No snapshots found")
+            return
+        print(f"  Snapshots ({r.get('total', 0)}):")
+        for s in snapshots:
+            size_mb = s.get("size", 0) / (1024 * 1024)
+            print(f"    {s['created']}  {size_mb:.1f}MB  {s['name']}")
+
+    elif action == "restore":
+        filename = args.filename
+        r = _rpc_call(args, config, "snapshot_restore", {"filename": filename})
+        if not r:
+            return
+        print(f"  [+] Restored from: {r.get('restored_from', '')}")
+        print(f"      Current backed up to: {r.get('backup_of_current', '')}")
+        if r.get("note"):
+            print(f"      Note: {r['note']}")
+
+
+# ─────────────────────────────────────────────
+# Compare (patch diffing)
+# ─────────────────────────────────────────────
+
+def cmd_compare(args, config, config_path):
+    """Compare two versions of a binary (patch diffing)."""
+    binary_a = os.path.abspath(args.binary_a)
+    binary_b = os.path.abspath(args.binary_b)
+    if not os.path.isfile(binary_a):
+        print(f"[-] File not found: {binary_a}")
+        return
+    if not os.path.isfile(binary_b):
+        print(f"[-] File not found: {binary_b}")
+        return
+
+    idb_dir = getattr(args, 'idb_dir', None) or os.environ.get("IDA_IDB_DIR") or "."
+
+    print(f"[*] Starting instances...")
+    # Start both instances
+    class FakeArgs:
+        def __init__(self, binary):
+            self.binary = binary
+            self.idb_dir = idb_dir
+            self.fresh = False
+            self.force = True
+            self.config = args.config if hasattr(args, 'config') else None
+    fa = FakeArgs(binary_a)
+    fb = FakeArgs(binary_b)
+    cmd_start(fa, config, config_path)
+    cmd_start(fb, config, config_path)
+
+    # Wait for both
+    registry = load_registry()
+    instances = []
+    for iid, info in registry.items():
+        bp = os.path.abspath(info.get("binary", ""))
+        if bp in (binary_a, binary_b) and info.get("state") in ("analyzing", "ready"):
+            instances.append((iid, info, bp))
+
+    if len(instances) < 2:
+        print("[-] Could not start both instances")
+        return
+
+    print("[*] Waiting for analysis...")
+    for iid, info, _ in instances:
+        class WaitArgs:
+            pass
+        wa = WaitArgs()
+        wa.instance_id = iid
+        wa.timeout = 300
+        cmd_wait(wa, config)
+
+    # Get function lists from both
+    def get_func_data(iid, info):
+        port = info.get("port")
+        resp = post_rpc(config, port, "get_functions", iid, {"count": 10000})
+        if "error" in resp:
+            return {}
+        return {f["name"]: f for f in resp.get("result", {}).get("data", [])}
+
+    ia, ib = instances[0], instances[1]
+    funcs_a = get_func_data(ia[0], ia[1])
+    funcs_b = get_func_data(ib[0], ib[1])
+
+    if not funcs_a or not funcs_b:
+        print("[-] Could not get function lists")
+        return
+
+    names_a = set(funcs_a.keys())
+    names_b = set(funcs_b.keys())
+    added = names_b - names_a
+    removed = names_a - names_b
+    common = names_a & names_b
+
+    # Compare sizes of common functions
+    modified = []
+    identical = 0
+    for name in common:
+        sa = funcs_a[name].get("size", 0)
+        sb = funcs_b[name].get("size", 0)
+        if sa != sb:
+            modified.append((name, funcs_a[name]["addr"], sa, funcs_b[name]["addr"], sb))
+        else:
+            identical += 1
+
+    name_a = os.path.basename(binary_a)
+    name_b = os.path.basename(binary_b)
+
+    print(f"\n  === Patch Diff: {name_a} vs {name_b} ===")
+    print(f"  Functions: {len(names_a)} vs {len(names_b)}")
+    print(f"  Identical: {identical}")
+    print(f"  Modified:  {len(modified)}")
+    print(f"  Added:     {len(added)}")
+    print(f"  Removed:   {len(removed)}")
+
+    if modified:
+        modified.sort(key=lambda x: abs(x[4] - x[2]), reverse=True)
+        print(f"\n  Modified functions ({len(modified)}):")
+        for name, addr_a, sa, addr_b, sb in modified[:50]:
+            delta = sb - sa
+            sign = "+" if delta > 0 else ""
+            print(f"    {name:<50}  {sa} -> {sb} ({sign}{delta})")
+        if len(modified) > 50:
+            print(f"    ... and {len(modified) - 50} more")
+
+    if added:
+        print(f"\n  Added functions ({len(added)}):")
+        for name in sorted(added)[:30]:
+            print(f"    {funcs_b[name]['addr']}  {name}")
+        if len(added) > 30:
+            print(f"    ... and {len(added) - 30} more")
+
+    if removed:
+        print(f"\n  Removed functions ({len(removed)}):")
+        for name in sorted(removed)[:30]:
+            print(f"    {funcs_a[name]['addr']}  {name}")
+        if len(removed) > 30:
+            print(f"    ... and {len(removed) - 30} more")
+
+    # Save report if --out
+    out_path = getattr(args, 'out', None)
+    if out_path:
+        report = {
+            "binary_a": binary_a, "binary_b": binary_b,
+            "functions_a": len(names_a), "functions_b": len(names_b),
+            "identical": identical,
+            "modified": [{"name": n, "size_a": sa, "size_b": sb} for n, _, sa, _, sb in modified],
+            "added": sorted(added),
+            "removed": sorted(removed),
+        }
+        _save_local(out_path, json.dumps(report, ensure_ascii=False, indent=2))
+
+
 def cmd_update(args):
     """Self-update from git repository."""
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1829,6 +2201,14 @@ def _build_dispatch(args, config, config_path):
         "bookmark": lambda: cmd_bookmark(args, config),
         "profile": lambda: cmd_profile(args, config),
         "report": lambda: cmd_report(args, config),
+        "shell": lambda: cmd_shell(args, config),
+        "annotations": lambda: cmd_annotations(args, config),
+        "callgraph": lambda: cmd_callgraph(args, config),
+        "patch": lambda: cmd_patch(args, config),
+        "search-const": lambda: cmd_search_const(args, config),
+        "structs": lambda: cmd_structs(args, config),
+        "snapshot": lambda: cmd_snapshot(args, config),
+        "compare": lambda: cmd_compare(args, config, config_path),
         "update": lambda: cmd_update(args),
         "completions": lambda: cmd_completions(args),
     }
@@ -1991,6 +2371,55 @@ def main():
     p = sub.add_parser("report", help="Generate analysis report", parents=[common])
     p.add_argument("output", help="Output file (.md or .html)")
     p.add_argument("--functions", nargs="*", default=[], help="Function addresses to decompile")
+
+    sub.add_parser("shell", help="Interactive IDA Python REPL", parents=[common])
+
+    ann = sub.add_parser("annotations", help="Export/import annotations", parents=[common])
+    ann_sub = ann.add_subparsers(dest="action")
+    ann_exp = ann_sub.add_parser("export", help="Export annotations")
+    ann_exp.add_argument("--output", default="annotations.json", help="Output JSON file")
+    ann_imp = ann_sub.add_parser("import", help="Import annotations")
+    ann_imp.add_argument("input_file", help="JSON annotations file")
+
+    p = sub.add_parser("callgraph", help="Function call graph", parents=[common])
+    p.add_argument("addr", help="Function address or name")
+    p.add_argument("--depth", type=int, default=3, help="Max depth (default 3)")
+    p.add_argument("--direction", choices=["callees", "callers", "both"], default="callees")
+    p.add_argument("--format", choices=["mermaid", "dot"], default="mermaid")
+    p.add_argument("--out", default=None, help="Save to file")
+
+    p = sub.add_parser("patch", help="Patch bytes at address", parents=[common])
+    p.add_argument("addr", help="Address to patch")
+    p.add_argument("hex_bytes", nargs="+", help="Hex bytes (e.g. 90 90 90)")
+
+    p = sub.add_parser("search-const", help="Search constant/immediate values", parents=[common])
+    p.add_argument("value", help="Value to search (hex or decimal)")
+    p.add_argument("--max", type=int, default=None, help="Max results")
+
+    stru = sub.add_parser("structs", help="Manage structs", parents=[common])
+    stru_sub = stru.add_subparsers(dest="action")
+    stru_list = stru_sub.add_parser("list", help="List structs")
+    stru_list.add_argument("--filter", default=None, help="Filter by name")
+    stru_show = stru_sub.add_parser("show", help="Show struct details")
+    stru_show.add_argument("name", help="Struct name")
+    stru_create = stru_sub.add_parser("create", help="Create struct")
+    stru_create.add_argument("name", help="Struct name")
+    stru_create.add_argument("--union", action="store_true", help="Create union instead")
+    stru_create.add_argument("--members", nargs="*", help="Members as name:size (e.g. field1:4 field2:8)")
+
+    snap = sub.add_parser("snapshot", help="Manage IDB snapshots", parents=[common])
+    snap_sub = snap.add_subparsers(dest="action")
+    snap_save = snap_sub.add_parser("save", help="Save snapshot")
+    snap_save.add_argument("--description", default=None, help="Snapshot description")
+    snap_sub.add_parser("list", help="List snapshots")
+    snap_restore = snap_sub.add_parser("restore", help="Restore snapshot")
+    snap_restore.add_argument("filename", help="Snapshot file path")
+
+    p = sub.add_parser("compare", help="Patch diff two binaries", parents=[common])
+    p.add_argument("binary_a", help="First binary")
+    p.add_argument("binary_b", help="Second binary")
+    p.add_argument("--idb-dir", default=None)
+    p.add_argument("--out", default=None, help="Save diff report as JSON")
 
     sub.add_parser("update", help="Self-update from git")
 

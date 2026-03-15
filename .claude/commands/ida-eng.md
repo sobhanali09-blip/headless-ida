@@ -92,6 +92,21 @@ ida-cli -b <hint> comments <addr>
 ida-cli -b <hint> exec "import idautils; print(len(list(idautils.Functions())))"
 ida-cli -b <hint> exec "import idc; print(idc.get_segm_name(0x140001000))"
 
+# Search for constant/immediate values
+ida-cli -b <hint> search-const 0x1234 --max 20
+
+# Call graph (mermaid or DOT format)
+ida-cli -b <hint> callgraph <addr|name> --depth 3 --direction callees
+ida-cli -b <hint> callgraph <addr> --format dot --out graph.dot
+
+# Struct management
+ida-cli -b <hint> structs list [--filter name]
+ida-cli -b <hint> structs show <struct_name>
+ida-cli -b <hint> structs create <name> --members "field1:4" "field2:8"
+
+# Interactive IDA Python shell
+ida-cli -b <hint> shell
+
 # List available RPC methods
 ida-cli -b <hint> methods
 ```
@@ -100,6 +115,7 @@ ida-cli -b <hint> methods
 ```bash
 ida-cli -b <hint> rename <addr> <new_name>
 ida-cli -b <hint> set_type <addr> "int __fastcall func(int a, int b)"
+ida-cli -b <hint> patch <addr> 90 90 90  # NOP patch
 ida-cli -b <hint> comment <addr> "description text"
 ida-cli -b <hint> save
 ```
@@ -107,7 +123,27 @@ ida-cli -b <hint> save
 > variable names and types will be reflected, producing much more readable code.
 > Repeat this cycle for key functions.
 
-### 6. Shutdown
+### 6. Annotations & Snapshots
+```bash
+# Export all names/comments/types as JSON (for backup/sharing)
+ida-cli -b <hint> annotations export --output analysis.json
+
+# Import annotations back
+ida-cli -b <hint> annotations import analysis.json
+
+# Save IDB snapshot before experimental changes
+ida-cli -b <hint> snapshot save --description "before refactoring"
+ida-cli -b <hint> snapshot list
+ida-cli -b <hint> snapshot restore <snapshot_file>
+```
+
+### 7. Binary Comparison (Patch Diffing)
+```bash
+# Compare two versions of a binary
+ida-cli -b <hint> compare old_binary.exe new_binary.exe --out diff.json
+```
+
+### 8. Shutdown
 ```bash
 ida-cli stop <id>
 ```

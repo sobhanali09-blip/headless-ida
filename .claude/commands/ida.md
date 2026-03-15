@@ -92,6 +92,21 @@ ida-cli -b <hint> comments <주소>
 ida-cli -b <hint> exec "import idautils; print(len(list(idautils.Functions())))"
 ida-cli -b <hint> exec "import idc; print(idc.get_segm_name(0x140001000))"
 
+# 상수값 검색
+ida-cli -b <hint> search-const 0x1234 --max 20
+
+# 콜그래프 (mermaid 또는 DOT 형식)
+ida-cli -b <hint> callgraph <주소|이름> --depth 3 --direction callees
+ida-cli -b <hint> callgraph <주소> --format dot --out graph.dot
+
+# 구조체 관리
+ida-cli -b <hint> structs list [--filter 이름]
+ida-cli -b <hint> structs show <구조체_이름>
+ida-cli -b <hint> structs create <이름> --members "field1:4" "field2:8"
+
+# 대화형 IDA Python 셸
+ida-cli -b <hint> shell
+
 # 사용 가능한 RPC 메서드 목록
 ida-cli -b <hint> methods
 ```
@@ -100,13 +115,34 @@ ida-cli -b <hint> methods
 ```bash
 ida-cli -b <hint> rename <주소> <새이름>
 ida-cli -b <hint> set_type <주소> "int __fastcall func(int a, int b)"
+ida-cli -b <hint> patch <주소> 90 90 90  # NOP 패치
 ida-cli -b <hint> comment <주소> "설명 텍스트"
 ida-cli -b <hint> save
 ```
 > **반복 분석 패턴**: rename/set_type 적용 후 다시 decompile하면 변수명과 타입이
 > 반영되어 훨씬 읽기 쉬운 코드가 됩니다. 핵심 함수는 이 과정을 반복하세요.
 
-### 6. 종료
+### 6. 분석 결과 관리 & 스냅샷
+```bash
+# 이름/주석/타입 JSON 내보내기 (백업/공유용)
+ida-cli -b <hint> annotations export --output analysis.json
+
+# 분석 결과 다시 가져오기
+ida-cli -b <hint> annotations import analysis.json
+
+# 실험적 변경 전 IDB 스냅샷 저장
+ida-cli -b <hint> snapshot save --description "리팩토링 전"
+ida-cli -b <hint> snapshot list
+ida-cli -b <hint> snapshot restore <스냅샷_파일>
+```
+
+### 7. 바이너리 비교 (패치 디핑)
+```bash
+# 두 버전의 바이너리 비교
+ida-cli -b <hint> compare old_binary.exe new_binary.exe --out diff.json
+```
+
+### 8. 종료
 ```bash
 ida-cli stop <id>
 ```
