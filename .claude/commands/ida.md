@@ -296,12 +296,65 @@ strings/imports에서 검색: root, jailbreak, ssl, cert, integrity, frida, xpos
 4. `exports`로 공개 심볼 / 진입점 파악
 5. `find_pattern`으로 매직 바이트/구조체 헤더 검색
 
-## 컨텍스트 효율성 팁
+## 컨텍스트 절약 규칙
 
-- `--out /tmp/file`로 대량 결과 저장 후 `Read`로 읽기
-- decompile/decompile_batch에 `--out` 사용하면 inline 출력 생략 (컨텍스트 절약)
-- `--count`, `--filter`로 출력 범위 제한
-- `--offset`으로 페이징 (대량 함수 탐색 시)
+**중요: 컨텍스트 창 낭비를 방지하기 위해 반드시 따를 것.**
+
+### 대량 출력은 항상 `--out` 사용
+```bash
+# 나쁨: 수백 줄이 컨텍스트에 쏟아짐
+ida-cli -b <hint> decompile <addr>
+
+# 좋음: 파일로 저장, "Saved to:"만 출력
+ida-cli -b <hint> decompile <addr> --out /tmp/func.c
+ida-cli -b <hint> functions --out /tmp/funcs.txt
+```
+`Read`의 offset/limit으로 필요한 부분만 읽기:
+```
+Read /tmp/funcs.txt offset=1 limit=50   # 처음 50줄만
+```
+
+### 검색 먼저, 디컴파일은 나중에
+```bash
+# 나쁨: 전체 디컴파일 후 수동 검색
+ida-cli -b <hint> decompile-all --out /tmp/all.c
+
+# 좋음: 검색 → 타겟 발견 → 해당 함수만 디컴파일
+ida-cli -b <hint> search-code "password" --max 10
+ida-cli -b <hint> strings --filter "http" --count 20
+ida-cli -b <hint> decompile <found_addr> --out /tmp/target.c
+```
+
+### 통합 명령 사용
+```bash
+# 나쁨: 3번 호출 (컨텍스트 3배)
+ida-cli -b <hint> strings --filter login
+ida-cli -b <hint> xrefs <addr1>
+ida-cli -b <hint> xrefs <addr2>
+
+# 좋음: 1번 호출로 해결
+ida-cli -b <hint> strings-xrefs --filter login --max 20
+```
+
+### 결과 수 공격적으로 제한
+```bash
+# 나쁨: 함수 2000개 전부 가져옴
+ida-cli -b <hint> functions
+
+# 좋음: --count와 --offset으로 페이징
+ida-cli -b <hint> functions --count 30
+ida-cli -b <hint> functions --count 30 --offset 30  # 다음 페이지
+```
+
+### Agent 서브에이전트로 독립 분석 위임
+독립적인 분석은 서브에이전트에 위임하여 메인 컨텍스트 보호:
+```
+Agent: "바이너리 X의 암호화 함수 분석"
+Agent: "바이너리 Y의 네트워크 관련 import 조사"
+```
+서브에이전트는 요약만 반환하므로 메인 컨텍스트가 깨끗하게 유지됨.
+
+### 기타
 - `summary` 한 번으로 segments + imports + strings 대체
 - `decompile_batch`로 여러 함수 한번에 디컴파일
 - `profile run <type>`으로 자동화된 정찰

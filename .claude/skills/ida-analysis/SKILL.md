@@ -298,16 +298,70 @@ Search strings/imports for: root, jailbreak, ssl, cert, integrity, frida, xposed
 4. `exports` for public symbols / entry points
 5. `find_pattern` for magic bytes / struct headers
 
-## Context Efficiency Tips
+## Context Efficiency Rules
 
-- Use `--out /tmp/file` to save large results, then `Read` the file
-- decompile/decompile_batch with `--out` suppress inline output (saves context)
-- Use `--count` and `--filter` to limit output scope
-- Use `--offset` for pagination (browsing large function lists)
+**CRITICAL: Follow these rules to avoid wasting context window.**
+
+### Always use `--out` for large output
+```bash
+# BAD: dumps hundreds of lines into context
+ida-cli -b <hint> decompile <addr>
+ida-cli -b <hint> functions
+
+# GOOD: saves to file, only "Saved to:" printed
+ida-cli -b <hint> decompile <addr> --out /tmp/func.c
+ida-cli -b <hint> functions --out /tmp/funcs.txt
+```
+Then use `Read` with offset/limit to read only the portion you need:
+```
+Read /tmp/funcs.txt offset=1 limit=50   # first 50 lines only
+```
+
+### Search first, decompile later
+```bash
+# BAD: decompile everything then search manually
+ida-cli -b <hint> decompile-all --out /tmp/all.c
+
+# GOOD: search → find target → decompile only what matters
+ida-cli -b <hint> search-code "password" --max 10
+ida-cli -b <hint> strings --filter "http" --count 20
+ida-cli -b <hint> decompile <found_addr> --out /tmp/target.c
+```
+
+### Use combined commands
+```bash
+# BAD: 3 separate calls (3x context cost)
+ida-cli -b <hint> strings --filter login
+ida-cli -b <hint> xrefs <addr1>
+ida-cli -b <hint> xrefs <addr2>
+
+# GOOD: 1 call does both
+ida-cli -b <hint> strings-xrefs --filter login --max 20
+```
+
+### Limit result counts aggressively
+```bash
+# BAD: fetches all 2000 functions
+ida-cli -b <hint> functions
+
+# GOOD: paginate with --count and --offset
+ida-cli -b <hint> functions --count 30
+ida-cli -b <hint> functions --count 30 --offset 30  # next page
+```
+
+### Use Agent subagents for independent analysis
+Delegate independent analysis tasks to subagents to protect main context:
+```
+Agent: "Analyze crypto functions in binary X"
+Agent: "Find all network-related imports in binary Y"
+```
+Each subagent returns only a summary, keeping main context clean.
+
+### Other tips
 - Use `summary` instead of separate segments + imports + strings calls
 - Use `decompile_batch` instead of multiple single decompile calls
 - Use `profile run <type>` for automated reconnaissance
-- Use `--json` mode for structured/machine-readable data
+- Use `--json` for machine-readable output when post-processing
 
 ## Error Handling
 
