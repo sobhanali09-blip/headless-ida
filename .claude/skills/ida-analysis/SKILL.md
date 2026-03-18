@@ -592,6 +592,26 @@ What are you analyzing?
 | Native code (.so, .dll, .exe, .dylib), security solutions, multi-arch | **IDA CLI** |
 | Firmware/IoT | **IDA CLI** |
 
+## MANDATORY: Cleanup After Analysis
+
+**CRITICAL: When analysis is complete, you MUST perform these cleanup steps before finishing. This is NOT optional.**
+
+1. **Save all IDB databases** for every running instance:
+   ```bash
+   ida-cli -b <hint> save
+   ```
+2. **Stop ALL running instances** to shut down the web servers:
+   ```bash
+   ida-cli list                    # Check all running instances
+   ida-cli stop <id>               # Stop each instance
+   ```
+3. **Verify no instances remain**:
+   ```bash
+   ida-cli list                    # Should show empty / no running instances
+   ```
+
+If multiple instances are running, save and stop each one individually. Never leave IDA instances running after analysis is done — they consume system resources (memory, CPU, network ports) indefinitely.
+
 ## User Argument: $ARGUMENTS
 When invoked with a binary path, immediately start analysis on that binary.
 If no path provided, ask the user what to analyze.
